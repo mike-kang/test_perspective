@@ -6,4 +6,10 @@
   1263. 2071.
   1500. 2187.
 </points>
+  <board_size>
+    450 250
+  </board_size>
+<plate_size>
+  310 100
+</plate_size>
 </opencv_storage>

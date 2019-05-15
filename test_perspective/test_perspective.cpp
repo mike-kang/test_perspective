@@ -17,11 +17,13 @@ Point2f image_start;
 double fl;
 vector<Point2f> object_points;
 
-void getPoints(const char* filename, vector<Point2f>& points)
+void getPoints(const char* filename, vector<Point2f>& points, Size& board_size, Size& plate_size)
 {
 	FileStorage fs_P(filename, FileStorage::READ);
 	CV_Assert(fs_P.isOpened());
 	fs_P["points"] >> points;
+	fs_P["board_size"] >> board_size;
+	fs_P["plate_size"] >> plate_size;
 	fs_P.release();
 }
 
@@ -144,10 +146,24 @@ void draw_houghLines(Mat src, Mat&dst, vector<Vec2f>& lines, int nline)
 	cvtColor(src, dst, CV_GRAY2BGR);
 	for (size_t i = 0; i < min((int)lines.size(), nline); i++) {
 		float rho = lines[i][0], theta = lines[i][1];
-		double a = cos(theta), b = sin(theta);
-		Point2d pt(a*rho, b* rho);
-		Point2d delta(1000 * -b, 1000 * a);
-		line(dst, pt + delta, pt - delta, Scalar(0, 255, 0), 1, LINE_AA);
+		//double a = cos(theta), b = sin(theta);
+		//Point2d pt(a*rho, b* rho);
+		//Point2d delta(1000 * -b, 1000 * a);
+		//line(dst, pt + delta, pt - delta, Scalar(0, 255, 0), 1, LINE_AA);
+
+		if (theta < 3.14 / 4. || theta > 3.*3.14 / 4.) { // 수직 행
+			//cv::Point pt1(rho / cos(theta), 0); // 첫 행에서 해당 선의 교차점   
+			//cv::Point pt2((rho - result.rows*sin(theta)) / cos(theta), result.rows);
+			//// 마지막 행에서 해당 선의 교차점
+			//cv::line(image, pt1, pt2, cv::Scalar(255), 1); // 하얀 선으로 그리기
+
+		}
+		else { // 수평 행
+			cv::Point pt1(0, rho / sin(theta)); // 첫 번째 열에서 해당 선의 교차점  
+			cv::Point pt2(dst.cols, (rho - dst.cols*cos(theta)) / sin(theta));
+			// 마지막 열에서 해당 선의 교차점
+			cv::line(dst, pt1, pt2, Scalar(0, 255, 0), 1); 
+		}
 	}
 
 }
@@ -208,14 +224,51 @@ void homogenOp_edge_vertical(Mat img, Mat& dst, int mask_size)
 		}
 	}
 }
+void calc_histo(Mat image, Mat &hist, int bins, int range_max = 256)
+{
+	hist = Mat(bins, 1, CV_32F, Scalar(0));
+	float gap = range_max / (float)bins;
+
+	for (int i = 0; i < image.rows; i++) {
+		for (int j = 0; j < image.cols; j++)
+		{
+			int idx = int(image.at<uchar>(i, j) / gap);
+			hist.at<float>(idx)++;
+		}
+	}
+}
+
+
+void draw_histo(Mat hist, Mat &hist_img, Size size = Size(256, 200))
+{
+	hist_img = Mat(size, CV_8U, Scalar(255));
+	float  bin = (float)hist_img.cols / hist.rows;
+	normalize(hist, hist, 0, size.height, NORM_MINMAX);
+
+	for (int i = 0; i<hist.rows; i++)
+	{
+		float  start_x = (i * bin);
+		float  end_x = (i + 1) * bin;
+		Point2f pt1(start_x, 0);
+		Point2f pt2(end_x, hist.at <float>(i));
+
+		if (pt2.y > 0)
+			rectangle(hist_img, pt1, pt2, Scalar(0), -1);
+	}
+	flip(hist_img, hist_img, 0);
+}
+
 int main()
 {
-	center.x = 2145;
-	center.y = 1477;
+	//center.x = 2145;
+	//center.y = 1477;
+	center.x = 1937;
+	center.y = 1488;
+	int factor = 2;
 	fl = 950;
 
 	cv::Mat image; // create an empty image
-	image = cv::imread("capture4.jpg");
+	image = cv::imread("capture_211.jpg");
 	if (image.empty()) { // error handling
 						 // no image has been created…
 						 // possibly display an error message
@@ -227,14 +280,19 @@ int main()
 	vector<Point2f> points;
 	vector<Point2f> points_;
 	vector<Point2f> dst_points;
-	getPoints("points.xml", points);
+	Size board_size, plate_size;
+	getPoints("points_211_2.xml", points, board_size, plate_size);
 
-	Size dst_size(450, 250);
-	Mat dewarped(250, 450, CV_8UC3);
-	dst_points.push_back(Point2f{ 0,0 });
-	dst_points.push_back(Point2f{ (float)dst_size.width - 1,0 });
-	dst_points.push_back(Point2f{ (float)dst_size.width -1, (float)dst_size.height -1 });
-	dst_points.push_back(Point2f{ 0, (float)dst_size.height - 1 });
+	//Size dst_size(450, 250);
+	board_size /= factor;
+	plate_size /= factor;
+	int offset_x = 100;
+	int offset_y = 100;
+	Mat dewarped(board_size.height+ offset_y, board_size.width + offset_x, CV_8UC3);
+	dst_points.push_back(Point2f{ (float)offset_x,(float)offset_y });
+	dst_points.push_back(Point2f{ (float)board_size.width - 1 + offset_x, (float)offset_y });
+	dst_points.push_back(Point2f{ (float)board_size.width -1 + offset_x, (float)board_size.height -1+ offset_y });
+	dst_points.push_back(Point2f{ (float)offset_x, (float)board_size.height - 1 + offset_y });
 	calHomography(dst_points, cal_points_(points, points_), homograpy);
 	cout << "homography" << endl << homograpy << endl;
 
@@ -242,37 +300,94 @@ int main()
 	cv::imshow("dewarped", dewarped);
 	imwrite("result.jpg", dewarped);
 
-	Mat hsv_img, hsv[3];
-	cvtColor(dewarped, hsv_img, CV_BGR2HSV);
-	split(hsv_img, hsv);
-	cv::imshow("hsv0", hsv[0]);
-	cv::imshow("hsv1", hsv[1]);
-	cv::imshow("hsv2", hsv[2]);
+	//Mat hsv_img, hsv[3];
+	//cvtColor(dewarped, hsv_img, CV_BGR2HSV);
+	//split(hsv_img, hsv);
+	//cv::imshow("hsv0", hsv[0]);
+	//cv::imshow("hsv1", hsv[1]);
+	//cv::imshow("hsv2", hsv[2]);
 
 
 	Mat dewarped2;
 	cv::resize(dewarped, dewarped2, cv::Size(dewarped.cols / 2, dewarped.rows / 2), 0, 0, CV_INTER_NN);
-
-	Mat edge;
-#if 0
-	//canny
-	Canny(dewarped2, edge, 130, 300);
-#else
 	cv::imshow("dewarped2", dewarped2);
+
 	Mat gray_dewarped2;
 	cvtColor(dewarped2, gray_dewarped2, CV_BGR2GRAY);
-	homogenOp_edge_vertical(gray_dewarped2, edge, 3);
-#endif
-	cv::imshow("edge", edge);
+	cv::imshow("gray_dewarped2", gray_dewarped2);
+	Mat edge_v, edge_h, edge;
 
+#if 1
+	//canny
+	Mat canny;
+	Canny(gray_dewarped2, canny, 200, 200);
+//#else
+
+	Mat blur;
+	GaussianBlur(gray_dewarped2, blur, Size(5,5), 0.3);
+	cv::imshow("blur", blur);
+	Sobel(blur, edge_v, CV_32F, 1, 0, 3);
+	Sobel(blur, edge_h, CV_32F, 0, 1, 3);
+	convertScaleAbs(edge_v, edge_v);
+	convertScaleAbs(edge_h, edge_h);
+	//homogenOp(blur, edge, 3);
+	edge = edge_v;
+
+#endif
+	cv::imshow("edge_v", edge_v);
+	cv::imshow("edge_h", edge_h);
+	cv::imshow("edge", edge);
+	imwrite("edge.bmp", edge);
+
+	Mat hist, hist_image;
+	calc_histo(edge, hist, 256);
+	draw_histo(hist, hist_image);
+	cv::imshow("hist_image", hist_image);
+
+	Mat graph_h(edge.rows, edge.cols, CV_8UC1);
+	graph_h = 0;
+	for (int c = 0; c < edge.cols; c++) {
+		int sum = 0;
+		for (int r = 0; r < edge.rows; r++) {
+			if (edge.at<uchar>(r, c) > 50)
+				sum++;
+		}
+		graph_h.at<uchar>(graph_h.rows - sum - 1, c) = 255;
+	}
+	cv::imshow("graph_h", graph_h);
+	Mat graph_v(edge.rows, edge.cols+ 1, CV_8UC1);
+	graph_v = 0;
+	for (int r = 0; r < edge.rows; r++) {
+		int sum = 0;
+		for (int c = 0; c < edge.cols; c++) {
+			if (edge.at<uchar>(r, c) > 50)
+				sum++;
+		}
+		graph_v.at<uchar>(r, sum) = 255;
+	}
+	cv::imshow("graph_v", graph_v);
+
+
+
+
+
+
+	//Mat morph;
+	//uchar data[] = { 0,0,0,
+	//				1,1,1,
+	//				0,0,0 };
+	//Mat mask(3, 3, CV_8UC1, data);
+	//morphologyEx(graph_h, morph, MORPH_ERODE, mask);
+	//cv::imshow("morph", morph);
+	
 	//hough
 	Mat hough;
 	double delta_rho = 1, delta_theta = CV_PI / 180;
 	std::vector<Vec2f> lines;
-	HoughLines(edge, lines, delta_rho, delta_theta, 10);
-	draw_houghLines(edge, hough, lines, 5);
+	HoughLines(canny, lines, delta_rho, delta_theta, 50);
+	draw_houghLines(canny, hough, lines, 1);
 	cv::imshow("hough", hough);
-
+	
 
 	cv::waitKey(0);
     return 0;
