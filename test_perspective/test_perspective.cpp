@@ -5,12 +5,15 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include "lens.h"
+#include <algorithm>
 
 using namespace cv;
 using namespace std;
 
 #define M_PI 3.141592
 #define TO_RADIAN(x) ((x)/180.0 * 3.141592)
+
+extern void houghLines(Mat src, vector<Vec2f>& s_lines, double rho, double theta, int thresh);
 
 Point2f center;
 Point2f image_start;
@@ -281,7 +284,7 @@ int main()
 	vector<Point2f> points_;
 	vector<Point2f> dst_points;
 	Size board_size, plate_size;
-	getPoints("points_211_2.xml", points, board_size, plate_size);
+	getPoints("points_211_4.xml", points, board_size, plate_size);
 
 	//Size dst_size(450, 250);
 	board_size /= factor;
@@ -318,11 +321,7 @@ int main()
 	Mat edge_v, edge_h, edge;
 
 #if 1
-	//canny
-	Mat canny;
-	Canny(gray_dewarped2, canny, 200, 200);
 //#else
-
 	Mat blur;
 	GaussianBlur(gray_dewarped2, blur, Size(5,5), 0.3);
 	cv::imshow("blur", blur);
@@ -332,9 +331,8 @@ int main()
 	convertScaleAbs(edge_h, edge_h);
 	//homogenOp(blur, edge, 3);
 	edge = edge_v;
-
 #endif
-	cv::imshow("edge_v", edge_v);
+	//cv::imshow("edge_v", edge_v);
 	cv::imshow("edge_h", edge_h);
 	cv::imshow("edge", edge);
 	imwrite("edge.bmp", edge);
@@ -343,7 +341,7 @@ int main()
 	calc_histo(edge, hist, 256);
 	draw_histo(hist, hist_image);
 	cv::imshow("hist_image", hist_image);
-
+/*
 	Mat graph_h(edge.rows, edge.cols, CV_8UC1);
 	graph_h = 0;
 	for (int c = 0; c < edge.cols; c++) {
@@ -355,38 +353,78 @@ int main()
 		graph_h.at<uchar>(graph_h.rows - sum - 1, c) = 255;
 	}
 	cv::imshow("graph_h", graph_h);
-	Mat graph_v(edge.rows, edge.cols+ 1, CV_8UC1);
+	*/
+	int max = 0;
+	Mat graph_v(edge.rows, edge.cols+ 1, CV_8UC3);
 	graph_v = 0;
+	vector<Range> vec_bands;
+	bool bInBand = false;
+	int start_r;
 	for (int r = 0; r < edge.rows; r++) {
-		int sum = 0;
+		int count = 0;
 		for (int c = 0; c < edge.cols; c++) {
-			if (edge.at<uchar>(r, c) > 50)
-				sum++;
+			if (edge.at<uchar>(r, c) > 70)
+				count++;
 		}
-		graph_v.at<uchar>(r, sum) = 255;
+		if (count > max)
+			max = count;
+		if (count > 50) {
+			cv::line(graph_v, Point(0, r), Point(count, r), Scalar(255, 255, 255), 1);
+			if (!bInBand) {
+				start_r = r;
+				bInBand = true;
+			}
+		}
+		else {
+			if (bInBand) {
+				bInBand = false;
+				if(r - start_r > 10)
+					vec_bands.push_back(Range(start_r, r - 1));
+			}
+		}
+		//graph_v.at<uchar>(r, sum) = 255;
 	}
+	cout << "vertical projection's max count is " << max << endl;
 	cv::imshow("graph_v", graph_v);
 
+	Mat bands(edge.rows, edge.cols + 1, CV_8UC3);
+	bands = 0;
+	for (auto band : vec_bands) {
+		for (int r = band.start; r < band.end; r++) {
+			int count = 0;
+			for (int c = 0; c < edge.cols; c++) {
+				if (edge.at<uchar>(r, c) > 70)
+					count++;
+			}
+			if (count > 50) {
+				cv::line(bands, Point(0, r), Point(count, r), Scalar(255, 255, 255), 1);
+			}
 
-
-
-
-
-	//Mat morph;
-	//uchar data[] = { 0,0,0,
-	//				1,1,1,
-	//				0,0,0 };
-	//Mat mask(3, 3, CV_8UC1, data);
-	//morphologyEx(graph_h, morph, MORPH_ERODE, mask);
-	//cv::imshow("morph", morph);
-	
-	//hough
-	Mat hough;
-	double delta_rho = 1, delta_theta = CV_PI / 180;
-	std::vector<Vec2f> lines;
-	HoughLines(canny, lines, delta_rho, delta_theta, 50);
-	draw_houghLines(canny, hough, lines, 1);
-	cv::imshow("hough", hough);
+		}
+	}
+	cv::imshow("bands", bands);
+	int i = 0;
+	for (auto band : vec_bands) {
+		//canny
+		Mat canny;
+		Mat roi = gray_dewarped2(Range(std::max(band.start - 10, 0), std::min(band.end+ 10, gray_dewarped2.rows)),Range(0, gray_dewarped2.cols));
+		Canny(roi, canny, 200, 200);
+		//hough
+		Mat hough;
+		double delta_rho = 1, delta_theta = CV_PI / 180;
+		std::vector<Vec2f> lines;
+		houghLines(canny, lines, delta_rho, delta_theta, 50);
+		std::vector<Vec2f> lines_;
+		for (auto line : lines) {
+			float theta = line[1];
+			cout << "line: rho:" << line[0] << ", theta:" << theta << endl;
+			if(theta > 1.57 - 0.2 && theta < 1.57 + 0.2)
+				lines_.push_back(line);
+		}
+		draw_houghLines(canny, hough, lines_, 5);
+		cv::imshow("hough" + to_string(i++), hough);
+		//break;
+	}
 	
 
 	cv::waitKey(0);
