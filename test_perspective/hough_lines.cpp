@@ -132,7 +132,25 @@ void thres_lines(Mat acc_dst, Mat& lines, double _rho, double theta, int thresh)
 		}
 	}
 }
+#ifdef _LINE
+void thres_lines(Mat acc_dst, Mat& lines, double _rho, double theta, int thresh)
+{
+	for (int r = 0; r < acc_dst.rows; r++) {
+		for (int t = 0; t < acc_dst.cols; t++)
+		{
+			float value = (float)acc_dst.at<int>(r, t);			// 누적값
+			if (value >= thresh)								// 직선 길이 임계값
+			{
+				float rho = (float)((r - acc_dst.rows / 2) * _rho);		// 수직거리
+				float radian = (float)(t * theta);						// 각도
 
+				Matx13f line(rho, radian, value); 				// 단일 직선
+				lines.push_back((Mat)line);
+			}
+		}
+	}
+}
+#endif
 void sort_lines(Mat lines, vector<Vec3f>& s_lines )
 {
 	Mat acc = lines.col(2), idx;
@@ -147,6 +165,7 @@ void sort_lines(Mat lines, vector<Vec3f>& s_lines )
 		s_lines.push_back( Vec3f(rho,radian, count));
 	}
 }
+
 #ifdef _LINE
 void sort_lines(Mat lines, vector<Line>& s_lines)
 {
