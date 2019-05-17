@@ -2,6 +2,8 @@
 using namespace cv;
 using namespace std;
 
+vector<Point> vec_point;
+
 void hough_coord(Mat image, Mat& acc_mat, double rho, double theta)
 {
 	int  acc_h = int((image.rows + image.cols) * 2 / rho);
@@ -22,6 +24,7 @@ void hough_coord(Mat image, Mat& acc_mat, double rho, double theta)
 					r = cvRound(r / rho + acc_mat.rows / 2.0);
 					acc_mat.at<int>( (int)r, t)++;
 				}
+
 			}
 		}
 	}
@@ -30,28 +33,51 @@ void acc_mask(Mat acc_mat, Mat& acc_dst, Size size, int thresh)
 {
 	acc_dst = Mat(acc_mat.size(), CV_32S, Scalar(0));
 	Point  h_m = size / 2;	// 마스크 크기 절반
-#if 0
+#if 1
+	/*
+	Size sum_mask_size = Size(5, 5);
+	Point  h_sum_m = sum_mask_size / 2;	// 마스크 크기 절반
+	Mat sum_mat = Mat(acc_mat.size(), CV_32S, Scalar(0));
+	for (int r = h_sum_m.y; r < acc_mat.rows - h_sum_m.y; r++) {
+		for (int t = h_sum_m.x; t < acc_mat.cols - h_sum_m.x; t++)
+		{
+			Point left_top = Point(t, r) - h_sum_m;
+			
+			int sum = 0;
+			for (int u = 0; u < sum_mask_size.height; u++) {
+				for (int v = 0; v < sum_mask_size.width; v++)
+				{
+					Point p = left_top + Point(v, u);
+					sum += acc_mat.at<int>(p);
+				}
+			}
+			sum_mat.at<int>(Point(t,r)) = sum;
+
+
+		}
+	}
+	*/
 	for (int r = h_m.y; r < acc_mat.rows - h_m.y; r++) {
 		for (int t = h_m.x; t < acc_mat.cols - h_m.x; t++)
 		{
-			Point center = Point(t, r) - h_m;
-			int c_value = acc_mat.at<int>(center);	// 중심화소
+			Point left_top = Point(t, r) - h_m;
+			int c_value = acc_mat.at<int>(left_top);
 			if (c_value >= thresh)
 			{
 				double maxVal = 0;
 				for (int u = 0; u < size.height; u++) {
 					for (int v = 0; v < size.width; v++)
 					{
-						Point start = center + Point(v, u);
-						if (start != center && acc_mat.at<int>(start) > maxVal)
+						Point start = left_top + Point(v, u);
+						if (start != left_top && acc_mat.at<int>(start) > maxVal)
 							maxVal = acc_mat.at<int>(start);
 					}
 				}
 
-				Rect rect(center, size);
+				Rect rect(left_top, size);
 				if (c_value >= maxVal)
 				{
-					acc_dst.at<int>(center) = c_value;
+					acc_dst.at<int>(left_top) = c_value;
 					acc_mat(rect).setTo(0);
 				}
 			}
@@ -107,7 +133,7 @@ void thres_lines(Mat acc_dst, Mat& lines, double _rho, double theta, int thresh)
 	}
 }
 
-void sort_lines(Mat lines, vector<Vec2f>& s_lines )
+void sort_lines(Mat lines, vector<Vec3f>& s_lines )
 {
 	Mat acc = lines.col(2), idx;
 	sortIdx(acc, idx, SORT_EVERY_COLUMN + SORT_DESCENDING);
@@ -117,21 +143,53 @@ void sort_lines(Mat lines, vector<Vec2f>& s_lines )
 		int id = idx.at<int>(i);
 		float rho    = lines.at<float>(id, 0);		// 수직거리
 		float radian = lines.at<float>(id, 1);
-		s_lines.push_back( Vec2f(rho,radian));
+		float count = lines.at<float>(id, 2);
+		s_lines.push_back( Vec3f(rho,radian, count));
+	}
+}
+#ifdef _LINE
+void sort_lines(Mat lines, vector<Line>& s_lines)
+{
+	Mat acc = lines.col(2), idx;
+	sortIdx(acc, idx, SORT_EVERY_COLUMN + SORT_DESCENDING);
+
+	for (int i = 0; i < idx.rows; i++)
+	{
+		int id = idx.at<int>(i);
+		float rho = lines.at<float>(id, 0);		// 수직거리
+		float radian = lines.at<float>(id, 1);
+		float count = lines.at<float>(id, 2);
+		//s_lines.push_back(Vec3f(rho, radian, count));
 	}
 }
 
-
-void houghLines(Mat src, vector<Vec2f>& s_lines, double rho, double theta, int thresh)
+struct Line {
+	float rho;
+	float theta;
+	vector<Point> points;
+};
+#endif
+void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int thresh)
 {
 	Mat  acc_mat, acc_dst, lines;
 	hough_coord(src, acc_mat, rho, theta);
-	acc_mask(acc_mat, acc_dst, Size(5, 7), thresh);
+	acc_mask(acc_mat, acc_dst, Size(3, 7), thresh);
 
 	thres_lines(acc_dst, lines, rho, theta, thresh);
 	sort_lines(lines, s_lines);
 }
+#ifdef _LINE
 
+void houghLines(Mat src, vector<Line>& s_lines, double rho, double theta, int thresh)
+{
+	Mat  acc_mat, acc_dst, lines;
+	hough_coord(src, acc_mat, rho, theta);
+	acc_mask(acc_mat, acc_dst, Size(3, 7), thresh);
+
+	thres_lines(acc_dst, lines, rho, theta, thresh);
+	sort_lines(lines, s_lines);
+}
+#endif
 /*
 
 void draw_houghLines(Mat image, Mat& dst, vector<Vec2f> lines, int nline)

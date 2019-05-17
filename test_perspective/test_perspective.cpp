@@ -13,7 +13,7 @@ using namespace std;
 #define M_PI 3.141592
 #define TO_RADIAN(x) ((x)/180.0 * 3.141592)
 
-extern void houghLines(Mat src, vector<Vec2f>& s_lines, double rho, double theta, int thresh);
+extern void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int thresh);
 
 Point2f center;
 Point2f image_start;
@@ -284,7 +284,7 @@ int main()
 	vector<Point2f> points_;
 	vector<Point2f> dst_points;
 	Size board_size, plate_size;
-	getPoints("points_211_4.xml", points, board_size, plate_size);
+	getPoints("points_211_2.xml", points, board_size, plate_size);
 
 	//Size dst_size(450, 250);
 	board_size /= factor;
@@ -330,12 +330,11 @@ int main()
 	convertScaleAbs(edge_v, edge_v);
 	convertScaleAbs(edge_h, edge_h);
 	//homogenOp(blur, edge, 3);
-	edge = edge_v;
+	//edge = edge_v;
 #endif
 	//cv::imshow("edge_v", edge_v);
 	cv::imshow("edge_h", edge_h);
-	cv::imshow("edge", edge);
-	imwrite("edge.bmp", edge);
+	//imwrite("edge.bmp", edge);
 
 	Mat hist, hist_image;
 	calc_histo(edge, hist, 256);
@@ -355,15 +354,15 @@ int main()
 	cv::imshow("graph_h", graph_h);
 	*/
 	int max = 0;
-	Mat graph_v(edge.rows, edge.cols+ 1, CV_8UC3);
+	Mat graph_v(edge_v.rows, edge_v.cols+ 1, CV_8UC3);
 	graph_v = 0;
 	vector<Range> vec_bands;
 	bool bInBand = false;
 	int start_r;
-	for (int r = 0; r < edge.rows; r++) {
+	for (int r = 0; r < edge_v.rows; r++) {
 		int count = 0;
-		for (int c = 0; c < edge.cols; c++) {
-			if (edge.at<uchar>(r, c) > 70)
+		for (int c = 0; c < edge_v.cols; c++) {
+			if (edge_v.at<uchar>(r, c) > 70)
 				count++;
 		}
 		if (count > max)
@@ -387,13 +386,13 @@ int main()
 	cout << "vertical projection's max count is " << max << endl;
 	cv::imshow("graph_v", graph_v);
 
-	Mat bands(edge.rows, edge.cols + 1, CV_8UC3);
+	Mat bands(edge_v.rows, edge_v.cols + 1, CV_8UC3);
 	bands = 0;
 	for (auto band : vec_bands) {
 		for (int r = band.start; r < band.end; r++) {
 			int count = 0;
-			for (int c = 0; c < edge.cols; c++) {
-				if (edge.at<uchar>(r, c) > 70)
+			for (int c = 0; c < edge_v.cols; c++) {
+				if (edge_v.at<uchar>(r, c) > 70)
 					count++;
 			}
 			if (count > 50) {
@@ -405,21 +404,26 @@ int main()
 	cv::imshow("bands", bands);
 	int i = 0;
 	for (auto band : vec_bands) {
+		cout << "**band " << i << endl;
 		//canny
 		Mat canny;
-		Mat roi = gray_dewarped2(Range(std::max(band.start - 10, 0), std::min(band.end+ 10, gray_dewarped2.rows)),Range(0, gray_dewarped2.cols));
+		Mat roi = gray_dewarped2(Range(std::max(band.start - 15, 0), std::min(band.end + 15, gray_dewarped2.rows)),Range(0, gray_dewarped2.cols));
 		Canny(roi, canny, 200, 200);
+		cv::imshow("canny" + to_string(i), canny);
+
 		//hough
 		Mat hough;
 		double delta_rho = 1, delta_theta = CV_PI / 180;
-		std::vector<Vec2f> lines;
-		houghLines(canny, lines, delta_rho, delta_theta, 50);
+		std::vector<Vec3f> lines;
+		houghLines(canny, lines, delta_rho, delta_theta, 60);
 		std::vector<Vec2f> lines_;
 		for (auto line : lines) {
 			float theta = line[1];
-			cout << "line: rho:" << line[0] << ", theta:" << theta << endl;
-			if(theta > 1.57 - 0.2 && theta < 1.57 + 0.2)
-				lines_.push_back(line);
+			float count = line[2];
+			if (theta > 1.57 - 0.2 && theta < 1.57 + 0.2) {
+				cout << "line: rho:" << line[0] << ", theta:" << theta << "(" << theta*180/3.141592 << "), count:" << count << endl;
+				lines_.push_back(Vec2f(line[0], line[1]));
+			}
 		}
 		draw_houghLines(canny, hough, lines_, 5);
 		cv::imshow("hough" + to_string(i++), hough);
