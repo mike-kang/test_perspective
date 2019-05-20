@@ -198,7 +198,6 @@ void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int t
 	sort_lines(lines, s_lines);
 }
 #ifdef _LINE
-
 void houghLines(Mat src, vector<Line>& s_lines, double rho, double theta, int thresh)
 {
 	Mat  acc_mat, acc_dst, lines;

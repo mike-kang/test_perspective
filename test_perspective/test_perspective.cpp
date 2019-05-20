@@ -6,6 +6,7 @@
 #include <vector>
 #include "lens.h"
 #include <algorithm>
+#include "HoughLines.h"
 
 using namespace cv;
 using namespace std;
@@ -13,7 +14,7 @@ using namespace std;
 #define M_PI 3.141592
 #define TO_RADIAN(x) ((x)/180.0 * 3.141592)
 
-extern void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int thresh);
+//extern void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int thresh);
 
 Point2f center;
 Point2f image_start;
@@ -171,6 +172,18 @@ void draw_houghLines(Mat src, Mat&dst, vector<Vec2f>& lines, int nline)
 
 }
 
+
+void draw_houghLines(Mat src, Mat&dst, vector<CHoughLines::Line>& lines, int nline)
+{
+	cvtColor(src, dst, CV_GRAY2BGR);
+	for (size_t i = 0; i < min((int)lines.size(), nline); i++) {
+		auto points = lines[i].points;
+		for (auto point : *points) {
+			dst.at<Vec3b>(point & 0x0000ffff, point >> 16) = Vec3b(0, 0, 255);
+		}
+	}
+}
+
 void homogenOp(Mat img, Mat& dst, int mask_size)
 {
 	dst = Mat(img.size(), CV_8U, Scalar(0));
@@ -318,28 +331,35 @@ int main()
 	Mat gray_dewarped2;
 	cvtColor(dewarped2, gray_dewarped2, CV_BGR2GRAY);
 	cv::imshow("gray_dewarped2", gray_dewarped2);
-	Mat edge_v, edge_h, edge;
 
 #if 1
-//#else
+	//canny
+	Mat canny;
+	//Mat roi = edge_h(Range(std::max(band.start - 15, 0), std::min(band.end + 15, gray_dewarped2.rows)), Range(0, gray_dewarped2.cols));
+	Canny(gray_dewarped2, canny, 200, 150);
+
+#else
+	Mat edge_v, edge_h, edge;
 	Mat blur;
 	GaussianBlur(gray_dewarped2, blur, Size(5,5), 0.3);
 	cv::imshow("blur", blur);
 	Sobel(blur, edge_v, CV_32F, 1, 0, 3);
 	Sobel(blur, edge_h, CV_32F, 0, 1, 3);
 	convertScaleAbs(edge_v, edge_v);
+	threshold(edge_v, edge_v, 100, 255, THRESH_BINARY);
 	convertScaleAbs(edge_h, edge_h);
+	threshold(edge_h, edge_h, 100, 255, THRESH_BINARY);
 	//homogenOp(blur, edge, 3);
 	//edge = edge_v;
 #endif
-	//cv::imshow("edge_v", edge_v);
-	cv::imshow("edge_h", edge_h);
+	cv::imshow("canny", canny);
+	//cv::imshow("edge_h", edge_h);
 	//imwrite("edge.bmp", edge);
 
-	Mat hist, hist_image;
-	calc_histo(edge, hist, 256);
-	draw_histo(hist, hist_image);
-	cv::imshow("hist_image", hist_image);
+	//Mat hist, hist_image;
+	//calc_histo(edge, hist, 256);
+	//draw_histo(hist, hist_image);
+	//cv::imshow("hist_image", hist_image);
 /*
 	Mat graph_h(edge.rows, edge.cols, CV_8UC1);
 	graph_h = 0;
@@ -354,20 +374,20 @@ int main()
 	cv::imshow("graph_h", graph_h);
 	*/
 	int max = 0;
-	Mat graph_v(edge_v.rows, edge_v.cols+ 1, CV_8UC3);
+	Mat graph_v(canny.rows, canny.cols+ 1, CV_8UC3);
 	graph_v = 0;
 	vector<Range> vec_bands;
 	bool bInBand = false;
 	int start_r;
-	for (int r = 0; r < edge_v.rows; r++) {
+	for (int r = 0; r < canny.rows; r++) {
 		int count = 0;
-		for (int c = 0; c < edge_v.cols; c++) {
-			if (edge_v.at<uchar>(r, c) > 70)
+		for (int c = 0; c < canny.cols; c++) {
+			if (canny.at<uchar>(r, c) > 50)
 				count++;
 		}
 		if (count > max)
 			max = count;
-		if (count > 50) {
+		if (count > 25) {
 			cv::line(graph_v, Point(0, r), Point(count, r), Scalar(255, 255, 255), 1);
 			if (!bInBand) {
 				start_r = r;
@@ -377,7 +397,7 @@ int main()
 		else {
 			if (bInBand) {
 				bInBand = false;
-				if(r - start_r > 10)
+				if(r - start_r > 13)
 					vec_bands.push_back(Range(start_r, r - 1));
 			}
 		}
@@ -386,16 +406,16 @@ int main()
 	cout << "vertical projection's max count is " << max << endl;
 	cv::imshow("graph_v", graph_v);
 
-	Mat bands(edge_v.rows, edge_v.cols + 1, CV_8UC3);
+	Mat bands(canny.rows, canny.cols + 1, CV_8UC3);
 	bands = 0;
 	for (auto band : vec_bands) {
 		for (int r = band.start; r < band.end; r++) {
 			int count = 0;
-			for (int c = 0; c < edge_v.cols; c++) {
-				if (edge_v.at<uchar>(r, c) > 70)
+			for (int c = 0; c < canny.cols; c++) {
+				if (canny.at<uchar>(r, c) > 70)
 					count++;
 			}
-			if (count > 50) {
+			if (count > 25) {
 				cv::line(bands, Point(0, r), Point(count, r), Scalar(255, 255, 255), 1);
 			}
 
@@ -406,26 +426,31 @@ int main()
 	for (auto band : vec_bands) {
 		cout << "**band " << i << endl;
 		//canny
-		Mat canny;
-		Mat roi = gray_dewarped2(Range(std::max(band.start - 15, 0), std::min(band.end + 15, gray_dewarped2.rows)),Range(0, gray_dewarped2.cols));
-		Canny(roi, canny, 200, 200);
-		cv::imshow("canny" + to_string(i), canny);
+		//Mat canny;
+		Mat roi = canny(Range(std::max(band.start - 15, 0), std::min(band.end + 15, gray_dewarped2.rows)),Range(0, gray_dewarped2.cols));
+		//Canny(roi, canny, 200, 200);
+		cv::imshow("roi" + to_string(i), roi);
 
 		//hough
 		Mat hough;
 		double delta_rho = 1, delta_theta = CV_PI / 180;
-		std::vector<Vec3f> lines;
-		houghLines(canny, lines, delta_rho, delta_theta, 60);
-		std::vector<Vec2f> lines_;
-		for (auto line : lines) {
-			float theta = line[1];
-			float count = line[2];
+		CHoughLines hl(roi, delta_rho, delta_theta, 65);
+		vector<CHoughLines::Line> vec_line = hl.cal();
+
+		//houghLines(canny, lines, delta_rho, delta_theta, 60);
+		std::vector<CHoughLines::Line> lines_;
+		for (auto line : vec_line) {
+			float rho = line.rho;
+			float theta = line.theta;
+			float count = line.points->size();
 			if (theta > 1.57 - 0.2 && theta < 1.57 + 0.2) {
-				cout << "line: rho:" << line[0] << ", theta:" << theta << "(" << theta*180/3.141592 << "), count:" << count << endl;
-				lines_.push_back(Vec2f(line[0], line[1]));
+				cout << "line: rho:" << rho << ", theta:" << theta << "(" << theta*180/3.141592 << "), count:" << count << endl;
+				lines_.push_back(CHoughLines::Line(rho, theta, line.points));
 			}
 		}
-		draw_houghLines(canny, hough, lines_, 5);
+
+		draw_houghLines(roi, hough, lines_, 6);
+		
 		cv::imshow("hough" + to_string(i++), hough);
 		//break;
 	}
