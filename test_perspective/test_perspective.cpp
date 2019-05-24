@@ -6,13 +6,15 @@
 #include <vector>
 #include "lens.h"
 #include <algorithm>
-#include "HoughLines.h"
+//#include "HoughLines.h"
 
 using namespace cv;
 using namespace std;
 
 #define M_PI 3.141592
 #define TO_RADIAN(x) ((x)/180.0 * 3.141592)
+
+#define SHOW_BAND
 
 //extern void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int thresh);
 
@@ -172,7 +174,7 @@ void draw_houghLines(Mat src, Mat&dst, vector<Vec2f>& lines, int nline)
 
 }
 
-
+/*
 void draw_houghLines(Mat src, Mat&dst, vector<CHoughLines::Line>& lines, int nline)
 {
 	cvtColor(src, dst, CV_GRAY2BGR);
@@ -183,6 +185,7 @@ void draw_houghLines(Mat src, Mat&dst, vector<CHoughLines::Line>& lines, int nli
 		}
 	}
 }
+*/
 
 void homogenOp(Mat img, Mat& dst, int mask_size)
 {
@@ -273,6 +276,87 @@ void draw_histo(Mat hist, Mat &hist_img, Size size = Size(256, 200))
 	}
 	flip(hist_img, hist_img, 0);
 }
+struct _Segmentation {
+	_Segmentation(Point s, Point e, int l) {
+		start = s;
+		end = e;
+		length = l;
+	}
+	Point start;
+	Point end;
+	int length;
+};
+Vec2i findLineSegment(Mat roi, Vec2f line, int thresh)
+{
+	float rho = line[0];
+	float theta = line[1];
+	int y;
+	float slope = -1./tan(theta);
+	float intercept_y = rho / sin(theta);
+	vector<_Segmentation> vec_segmentation;
+	Point start, end;
+	int count = 0;
+	int status = 0; //0:find start point, 1:find end point
+	int disconnect = 0;
+	int pre_y;
+	for (int x = 0; x < roi.cols; x++) {
+		y = slope * x + intercept_y;
+		if (y < 0) {
+			if (slope <= 0)
+				break;
+			continue;
+		}
+		else if (y >= roi.rows - 1) {
+			if (slope >= 0)
+				break;
+			continue;
+		}
+		if (!status) {
+			if (roi.at<uchar>(y, x) > 0 || roi.at<uchar>(std::max(y - 1, 0), x) > 0 || roi.at<uchar>(min(y + 1, roi.rows - 1), x) > 0) {
+				start.x = x;
+				start.y = y;
+				status = 1;
+				disconnect = 0;
+			}
+		}
+		else {
+			//find end point
+			if (roi.at<uchar>(y, x) == 0 && roi.at<uchar>(std::max(y - 1, 0), x) == 0 && roi.at<uchar>(min(y + 1, roi.rows - 1), x) == 0) {
+				disconnect++;
+				if (disconnect == 1) {
+					end.x = x - 1;
+					end.y = pre_y;
+				}
+				else if (disconnect > 1) {
+					status = 0;
+					int len = sqrt(pow(end.x - start.x, 2) + pow(end.y - start.y, 2));
+					if(len >= thresh)
+						vec_segmentation.push_back(_Segmentation(start, end, len));
+				}
+			}
+
+		}
+		pre_y = y;
+	}
+	for (auto seg : vec_segmentation) {
+		cout << "segmentation:" << seg.length << "    "  << seg.start.x <<","<< seg.start.y << ",  " << seg.end.x << "," << seg.end.y << endl;
+
+	}
+	return Vec2i(0, 0);
+}
+
+float calTriArea(Point2f p0, Point2f p1, Point2f p2)
+{
+	float a = sqrt(pow(p0.x - p1.x, 2) + pow(p0.y - p1.y, 2));
+	float b = sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2));
+	float c = sqrt(pow(p2.x - p0.x, 2) + pow(p2.y - p0.y, 2));
+	float s = (a + b + c) / 2.;
+	return sqrt(s*(s - a)*(s - b)*(s - c));
+}
+float calArea(vector<Point2f> points)
+{
+	return calTriArea(points[0], points[1], points[2]) + calTriArea(points[2], points[3], points[0]);
+}
 
 int main()
 {
@@ -280,7 +364,7 @@ int main()
 	//center.y = 1477;
 	center.x = 1937;
 	center.y = 1488;
-	int factor = 2;
+	float factor = 0.1;
 	fl = 950;
 
 	cv::Mat image; // create an empty image
@@ -297,14 +381,25 @@ int main()
 	vector<Point2f> points_;
 	vector<Point2f> dst_points;
 	Size board_size, plate_size;
-	getPoints("points_211_2.xml", points, board_size, plate_size);
+	//getPoints("points_211_DL1.xml", points, board_size, plate_size);
+	//getPoints("points_211_DL2.xml", points, board_size, plate_size);
+	//getPoints("points_211_UR1.xml", points, board_size, plate_size);
+	getPoints("points_211_DL3.xml", points, board_size, plate_size);
 
+	float effective_pixel = calArea(points);
+	cout << "effective_pixel:" << effective_pixel << endl;
+	float _factor = sqrt(effective_pixel / board_size.width / board_size.height);
 	//Size dst_size(450, 250);
-	board_size /= factor;
-	plate_size /= factor;
-	int offset_x = 100;
-	int offset_y = 100;
-	Mat dewarped(board_size.height+ offset_y, board_size.width + offset_x, CV_8UC3);
+	cout << "_factor:" << _factor << endl;
+	factor = _factor;
+	board_size.width = board_size.width * factor;
+	board_size.height = board_size.height * factor;
+
+#define OFFSET_X 300 // mm
+#define OFFSET_Y 300 // mm
+	//plate_size /= factor;	//not used
+	int offset_x = OFFSET_X * factor;
+	int offset_y = OFFSET_Y * factor;
 	dst_points.push_back(Point2f{ (float)offset_x,(float)offset_y });
 	dst_points.push_back(Point2f{ (float)board_size.width - 1 + offset_x, (float)offset_y });
 	dst_points.push_back(Point2f{ (float)board_size.width -1 + offset_x, (float)board_size.height -1+ offset_y });
@@ -312,9 +407,13 @@ int main()
 	calHomography(dst_points, cal_points_(points, points_), homograpy);
 	cout << "homography" << endl << homograpy << endl;
 
+	Mat dewarped(board_size.height + offset_y, board_size.width + offset_x, CV_8UC3);
+	cout << "dewarped width:" << board_size.width + offset_x << ", height:" << board_size.height + offset_y << endl;
+
 	makeImage(image, dewarped, homograpy);
 	cv::imshow("dewarped", dewarped);
 	imwrite("result.jpg", dewarped);
+	//dewarped = cv::imread("hard.jpg");	//test
 
 	//Mat hsv_img, hsv[3];
 	//cvtColor(dewarped, hsv_img, CV_BGR2HSV);
@@ -324,12 +423,13 @@ int main()
 	//cv::imshow("hsv2", hsv[2]);
 
 
-	Mat dewarped2;
-	cv::resize(dewarped, dewarped2, cv::Size(dewarped.cols / 2, dewarped.rows / 2), 0, 0, CV_INTER_NN);
-	cv::imshow("dewarped2", dewarped2);
+	//Mat dewarped2;
+	//cv::resize(dewarped, dewarped2, cv::Size(dewarped.cols / 1, dewarped.rows / 1), 0, 0, CV_INTER_NN);
+	//cv::imshow("dewarped2", dewarped2);
+
 
 	Mat gray_dewarped2;
-	cvtColor(dewarped2, gray_dewarped2, CV_BGR2GRAY);
+	cvtColor(dewarped, gray_dewarped2, CV_BGR2GRAY);
 	cv::imshow("gray_dewarped2", gray_dewarped2);
 
 #if 1
@@ -373,21 +473,49 @@ int main()
 	}
 	cv::imshow("graph_h", graph_h);
 	*/
+	Mat grid(canny.rows, canny.cols, CV_8UC1);
+#define FONT_WIDTH 45
+#define FONT_HEIGHT 60
+#define EDGE_THRESHOLD_RATE 0.13
+	grid = 0;
+	Size mask(FONT_WIDTH * factor,FONT_HEIGHT * factor);
+	int threshold_grid = mask.height * mask.width * EDGE_THRESHOLD_RATE;
+	for (int j = 0; j < grid.rows / mask.height; j++) {
+		for (int i = 0; i < grid.cols / mask.width; i++) {
+			Mat& cell = canny(Range(j * mask.height, mask.height *(j+ 1)), Range(i * mask.width, mask.width *(i + 1)));
+			int count = 0;
+			for (int _j = 0; _j < mask.height; _j++) {
+				for (int _i = 0; _i < mask.width; _i++) {
+					if (cell.at<uchar>(_j, _i) > 0)
+						count++;
+				}
+			}
+			if (count > threshold_grid)
+				grid(Range(j * mask.height, mask.height *(j + 1)), Range(i * mask.width, mask.width *(i + 1))) = 255;
+		}
+	}
+	cv::imshow("grid", grid);
+
+#define CHAR_COUNT 7
+
 	int max = 0;
 	Mat graph_v(canny.rows, canny.cols+ 1, CV_8UC3);
 	graph_v = 0;
 	vector<Range> vec_bands;
 	bool bInBand = false;
 	int start_r;
+	int needed_band_pixel = CHAR_COUNT * FONT_WIDTH * factor * EDGE_THRESHOLD_RATE; // canny.cols / 10;
+	int needed_band_width = FONT_HEIGHT * factor;	
+	cout << "band pixel:" << needed_band_pixel << ", width:" << needed_band_width << endl;
 	for (int r = 0; r < canny.rows; r++) {
 		int count = 0;
 		for (int c = 0; c < canny.cols; c++) {
-			if (canny.at<uchar>(r, c) > 50)
+			if (canny.at<uchar>(r, c) > 0)
 				count++;
 		}
 		if (count > max)
 			max = count;
-		if (count > 25) {
+		if (count > needed_band_pixel) {
 			cv::line(graph_v, Point(0, r), Point(count, r), Scalar(255, 255, 255), 1);
 			if (!bInBand) {
 				start_r = r;
@@ -397,7 +525,7 @@ int main()
 		else {
 			if (bInBand) {
 				bInBand = false;
-				if(r - start_r > 13)
+				if(r - start_r > needed_band_width)
 					vec_bands.push_back(Range(start_r, r - 1));
 			}
 		}
@@ -405,35 +533,41 @@ int main()
 	}
 	cout << "vertical projection's max count is " << max << endl;
 	cv::imshow("graph_v", graph_v);
-
+#ifdef SHOW_BAND
 	Mat bands(canny.rows, canny.cols + 1, CV_8UC3);
 	bands = 0;
 	for (auto band : vec_bands) {
 		for (int r = band.start; r < band.end; r++) {
 			int count = 0;
 			for (int c = 0; c < canny.cols; c++) {
-				if (canny.at<uchar>(r, c) > 70)
+				if (canny.at<uchar>(r, c) > 0)
 					count++;
 			}
-			if (count > 25) {
+			if (count > needed_band_pixel) {
 				cv::line(bands, Point(0, r), Point(count, r), Scalar(255, 255, 255), 1);
 			}
 
 		}
 	}
 	cv::imshow("bands", bands);
+#endif
 	int i = 0;
 	for (auto band : vec_bands) {
-		cout << "**band " << i << endl;
+		int v_start = std::max(band.start - 15, 0);
+		int v_end = std::min(band.end + 15, gray_dewarped2.rows - 1);
+		int h_start = 0;
+		int h_end = gray_dewarped2.cols;
+		cout << "**band " << i << " [(" << h_start <<", " << v_start << ")-(" << h_end <<", " << v_end << ")]" <<  endl;
 		//canny
 		//Mat canny;
-		Mat roi = canny(Range(std::max(band.start - 15, 0), std::min(band.end + 15, gray_dewarped2.rows)),Range(0, gray_dewarped2.cols));
+		Mat roi = canny(Range(v_start, v_end),Range(h_start, h_end));
 		//Canny(roi, canny, 200, 200);
-		cv::imshow("roi" + to_string(i), roi);
+		//cv::imshow("roi" + to_string(i), roi);
 
 		//hough
 		Mat hough;
 		double delta_rho = 1, delta_theta = CV_PI / 180;
+#if 0
 		CHoughLines hl(roi, delta_rho, delta_theta, 65);
 		vector<CHoughLines::Line> vec_line = hl.cal();
 
@@ -450,7 +584,23 @@ int main()
 		}
 
 		draw_houghLines(roi, hough, lines_, 6);
-		
+#else
+		vector<Vec2f> vec_line, _vec_line;
+		HoughLines(roi, vec_line, delta_rho, delta_theta, h_end / 5);
+		for (auto line : vec_line) {
+			float rho = line[0];
+			float theta = line[1];
+			if (theta > 1.57 - 0.2 && theta < 1.57 + 0.2) {
+				cout << "line: rho:" << rho << ", theta:" << theta << "(" << theta * 180 / 3.141592 << ")" << endl;
+				_vec_line.push_back(line);
+			}
+		}
+		draw_houghLines(roi, hough, _vec_line, 5);
+#endif
+		for (Vec2f line : _vec_line) {
+			findLineSegment(roi, line, h_end / 3);
+			cout << "-----------------------------------" << endl;
+		}
 		cv::imshow("hough" + to_string(i++), hough);
 		//break;
 	}
