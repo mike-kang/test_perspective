@@ -614,7 +614,10 @@ bool test(Mat& image, const char* xml, int idx)
 	for (auto point : outline) {
 		debug_outline.at<Vec3b>(point) = Vec3b(0, 255, 0);
 	}
-	cv::imshow(std::to_string(idx) + "debug_outline", debug_outline);
+	//cv::imshow(std::to_string(idx) + "debug_outline", debug_outline);
+	Mat debug_outline2;
+	cv::resize(debug_outline, debug_outline2, cv::Size(dewarped.cols *3, dewarped.rows *3), 0, 0, CV_INTER_NN);
+	cv::imshow(std::to_string(idx) + "debug_outline2", debug_outline2);
 
 }
 
@@ -622,11 +625,13 @@ Point pri_direction[9][7] = {
 	{Point(-1, 0), Point(-1,1), Point(-1, -1), Point(0, 1), Point(0, -1), Point(1,0), Point(1, -1)},
 	{ Point(0, -1), Point(1,-1), Point(-1, -1), Point(1, 0), Point(-1, 0), Point(1,1), Point(-1, 1) },
 	{ Point(1, 0), Point(1,1), Point(1, -1), Point(0, 1), Point(0, -1), Point(-1,0), Point(-1, -1) },
-	{ Point(-1, 0), Point(-1,-1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1,-1), Point(1, 1) },
+	//{ Point(-1, 0), Point(-1,-1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1,-1), Point(1, 1) },
+	{ Point(0, -1), Point(-1,-1), Point(-1, 0), Point(1, -1), Point(0, 1), Point(-1,1), Point(1, 1) },
 	{ Point(0,0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0)},
 	{ Point(1,0), Point(1, 1), Point(1, -1), Point(0, 1), Point(0, -1), Point(-1, 1), Point(-1, -1) },
 	{ Point(-1,0), Point(-1, -1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1, 0), Point(1, 1) },
-	{ Point(0,1), Point(-1, 1), Point(1, 1), Point(-1, 0), Point(1, 0), Point(-1, -1), Point(1, -1) },
+	//{ Point(0,1), Point(-1, 1), Point(1, 1), Point(-1, 0), Point(1, 0), Point(-1, -1), Point(1, -1) },
+	{ Point(-1, 0), Point(-1,1), Point(0, 1), Point(-1, -1), Point(1, 0), Point(1,1), Point(1, -1) },
 	{ Point(0,1), Point(1, 0), Point(1, 1), Point(1, -1), Point(0, -1), Point(-1, 1), Point(-1, 0) },
 };
 
@@ -666,26 +671,59 @@ bool find_outline(Mat& img, Point center, vector<detectedLine>& detected_lines, 
 		dir = 5;
 	else
 		dir = 3;
+	int disconnet_count = 0;
 	while (true) {
 		bool bFind = false;
+		bool bReachEnd = false;
 		for (int i = 0; i < 7; i++) {
-			x = _p.x + pri_direction[dir][i].x;
-			y = _p.y + pri_direction[dir][i].y;
-			if (x < 0 || x > img.cols - 1 || y < 0 || y > img.rows - 1)
+			int _x, _y;
+			_x = _p.x + pri_direction[dir][i].x;
+			_y = _p.y + pri_direction[dir][i].y;
+			if (_x < 0 || _x > img.cols - 1 || _y < 0 || _y > img.rows - 1) {
+				bReachEnd = true;
 				continue;
-			if (img.at<uchar>(y, x) >= THRESHOLD) {
+			}
+			if (img.at<uchar>(_y, _x) >= THRESHOLD) {
+				x = _x;
+				y = _y;
 				bFind = true;
 				break;
 			}
 		}
+		if (bReachEnd) {
+			cout << "Reach end" << endl;
+			break;
+		}
 		if (!bFind) {
-			cout << "not found point\n" << endl;
-			return false;
+			disconnet_count++;
+			cout << "disconnect count:" << disconnet_count << endl;
+			switch (dir) {
+			case 0:
+			case 2:
+			case 6:
+			case 8:
+				cout << "not found point" << endl;
+				break;
+			case 1:
+				y--;
+				break;
+			case 3:
+				x--;
+				break;
+			case 5:
+				x++;
+				break;
+			case 7:
+				y++;
+				break;
+		
+			}
 		}
 		if (x == start.x && y == start.y) {
 			return true;
 		}
 		result_points.push_back(Point(x, y));
+		cout << "(" << x << "," << y << ")" << endl;
 		dir = (y - _p.y + 1) * 3 + x - _p.x + 1;
 		_p.x = x;
 		_p.y = y;
