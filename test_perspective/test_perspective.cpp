@@ -15,7 +15,7 @@ using namespace std;
 #define TO_RADIAN(x) ((x)/180.0 * 3.141592)
 
 #define SHOW_BAND
-
+//#define SHOW_GRID_DEBUG
 //extern void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int thresh);
 
 Point2f center;
@@ -358,144 +358,422 @@ float calArea(vector<Point2f> points)
 	return calTriArea(points[0], points[1], points[2]) + calTriArea(points[2], points[3], points[0]);
 }
 
-int main()
+void drawGrid(Mat& grid, Size mask, vector<Point> points)
 {
-	//center.x = 2145;
-	//center.y = 1477;
+	for (auto p : points) {
+		int i = p.x;
+		int j = p.y;
+		grid(Range(j * mask.height, mask.height *(j + 1)), Range(i * mask.width, mask.width *(i + 1))) = Scalar(255, 255, 255);
+	}
+
+}
+struct detectedLine {
+	float slope;
+	float intercept_y;
+	int start_x;
+	int end_x;
+};
+bool detect_line(Mat& img, Rect rect, int delta, vector<detectedLine>& result_lines);
+bool find_outline(Mat& img, Point center, vector<detectedLine>& detected_lines, vector<Point>& result_points);
+
+bool test(Mat& image, const char* xml, int idx)
+{
 	center.x = 1937;
 	center.y = 1488;
-	float factor = 0.1;
+	float factor;;
 	fl = 950;
 
-	cv::Mat image; // create an empty image
-	image = cv::imread("capture_211.jpg");
-	if (image.empty()) { // error handling
-						 // no image has been created¡¦
-						 // possibly display an error message
-						 // and quit the application
-		cv::waitKey(0);
-	}
+	cout << "*************************test " << idx << endl;
 	Mat homograpy;
 
 	vector<Point2f> points;
 	vector<Point2f> points_;
 	vector<Point2f> dst_points;
 	Size board_size, plate_size;
-	//getPoints("points_211_DL1.xml", points, board_size, plate_size);
-	//getPoints("points_211_DL2.xml", points, board_size, plate_size);
-	//getPoints("points_211_UR1.xml", points, board_size, plate_size);
-	getPoints("points_211_DL3.xml", points, board_size, plate_size);
+
+	getPoints(xml, points, board_size, plate_size);
 
 	float effective_pixel = calArea(points);
 	cout << "effective_pixel:" << effective_pixel << endl;
-	float _factor = sqrt(effective_pixel / board_size.width / board_size.height);
+	factor = sqrt(effective_pixel / board_size.width / board_size.height);
 	//Size dst_size(450, 250);
-	cout << "_factor:" << _factor << endl;
-	factor = _factor;
+	cout << "factor:" << factor << endl;
 	board_size.width = board_size.width * factor;
 	board_size.height = board_size.height * factor;
 
-#define OFFSET_X 300 // mm
-#define OFFSET_Y 300 // mm
+#define OFFSET_X 0 // mm
+#define OFFSET_Y 0 // mm
+#define ADD_X 100 //mm
+
 	//plate_size /= factor;	//not used
 	int offset_x = OFFSET_X * factor;
 	int offset_y = OFFSET_Y * factor;
+	int add_x = ADD_X * factor;
 	dst_points.push_back(Point2f{ (float)offset_x,(float)offset_y });
 	dst_points.push_back(Point2f{ (float)board_size.width - 1 + offset_x, (float)offset_y });
-	dst_points.push_back(Point2f{ (float)board_size.width -1 + offset_x, (float)board_size.height -1+ offset_y });
+	dst_points.push_back(Point2f{ (float)board_size.width - 1 + offset_x, (float)board_size.height - 1 + offset_y });
 	dst_points.push_back(Point2f{ (float)offset_x, (float)board_size.height - 1 + offset_y });
 	calHomography(dst_points, cal_points_(points, points_), homograpy);
 	cout << "homography" << endl << homograpy << endl;
 
-	Mat dewarped(board_size.height + offset_y, board_size.width + offset_x, CV_8UC3);
+	Mat dewarped(board_size.height + offset_y, board_size.width + offset_x + add_x, CV_8UC3);
 	cout << "dewarped width:" << board_size.width + offset_x << ", height:" << board_size.height + offset_y << endl;
 
 	makeImage(image, dewarped, homograpy);
-	cv::imshow("dewarped", dewarped);
+	//cv::imshow("dewarped" + std::to_string(idx), dewarped);
 	imwrite("result.jpg", dewarped);
-	//dewarped = cv::imread("hard.jpg");	//test
 
-	//Mat hsv_img, hsv[3];
-	//cvtColor(dewarped, hsv_img, CV_BGR2HSV);
-	//split(hsv_img, hsv);
-	//cv::imshow("hsv0", hsv[0]);
-	//cv::imshow("hsv1", hsv[1]);
-	//cv::imshow("hsv2", hsv[2]);
+	Mat gray_dewarped(dewarped.rows, dewarped.cols, CV_8UC1);
+	cvtColor(dewarped, gray_dewarped, CV_BGR2GRAY);
 
-
-	//Mat dewarped2;
-	//cv::resize(dewarped, dewarped2, cv::Size(dewarped.cols / 1, dewarped.rows / 1), 0, 0, CV_INTER_NN);
-	//cv::imshow("dewarped2", dewarped2);
-
-
-	Mat gray_dewarped2;
-	cvtColor(dewarped, gray_dewarped2, CV_BGR2GRAY);
-	cv::imshow("gray_dewarped2", gray_dewarped2);
-
-#if 1
+	//cv::imshow("gray_dewarped" + std::to_string(idx), gray_dewarped);
 	//canny
 	Mat canny;
 	//Mat roi = edge_h(Range(std::max(band.start - 15, 0), std::min(band.end + 15, gray_dewarped2.rows)), Range(0, gray_dewarped2.cols));
-	Canny(gray_dewarped2, canny, 200, 150);
+	Canny(gray_dewarped, canny, 200, 100);
 
-#else
-	Mat edge_v, edge_h, edge;
-	Mat blur;
-	GaussianBlur(gray_dewarped2, blur, Size(5,5), 0.3);
-	cv::imshow("blur", blur);
-	Sobel(blur, edge_v, CV_32F, 1, 0, 3);
-	Sobel(blur, edge_h, CV_32F, 0, 1, 3);
-	convertScaleAbs(edge_v, edge_v);
-	threshold(edge_v, edge_v, 100, 255, THRESH_BINARY);
-	convertScaleAbs(edge_h, edge_h);
-	threshold(edge_h, edge_h, 100, 255, THRESH_BINARY);
-	//homogenOp(blur, edge, 3);
-	//edge = edge_v;
-#endif
-	cv::imshow("canny", canny);
-	//cv::imshow("edge_h", edge_h);
-	//imwrite("edge.bmp", edge);
-
-	//Mat hist, hist_image;
-	//calc_histo(edge, hist, 256);
-	//draw_histo(hist, hist_image);
-	//cv::imshow("hist_image", hist_image);
-/*
-	Mat graph_h(edge.rows, edge.cols, CV_8UC1);
-	graph_h = 0;
-	for (int c = 0; c < edge.cols; c++) {
-		int sum = 0;
-		for (int r = 0; r < edge.rows; r++) {
-			if (edge.at<uchar>(r, c) > 50)
-				sum++;
-		}
-		graph_h.at<uchar>(graph_h.rows - sum - 1, c) = 255;
-	}
-	cv::imshow("graph_h", graph_h);
-	*/
-	Mat grid(canny.rows, canny.cols, CV_8UC1);
-#define FONT_WIDTH 45
-#define FONT_HEIGHT 60
-#define EDGE_THRESHOLD_RATE 0.13
+	//cv::imshow(std::to_string(idx) + "canny", canny);
+	Mat grid(canny.rows, canny.cols, CV_8UC3);
+#define FONT_WIDTH 40
+#define FONT_HEIGHT 70
+#define EDGE_THRESHOLD_LESS_RATE 0.15
+#define EDGE_THRESHOLD_RATE 0.30
 	grid = 0;
-	Size mask(FONT_WIDTH * factor,FONT_HEIGHT * factor);
-	int threshold_grid = mask.height * mask.width * EDGE_THRESHOLD_RATE;
-	for (int j = 0; j < grid.rows / mask.height; j++) {
-		for (int i = 0; i < grid.cols / mask.width; i++) {
-			Mat& cell = canny(Range(j * mask.height, mask.height *(j+ 1)), Range(i * mask.width, mask.width *(i + 1)));
+	Size grid_cell((FONT_WIDTH + 3) * factor, FONT_HEIGHT * factor);
+	int grid_rows = grid.rows / grid_cell.height;
+	int grid_cols = grid.cols / grid_cell.width;
+
+#ifdef SHOW_GRID_DEBUG
+	Mat grid_debug = canny.clone();
+	for (int i = 0; i < grid_rows; i++) {
+		line(grid_debug, Point(0, i*grid_cell.height), Point(grid_debug.cols - 1, i*grid_cell.height), 255);
+	}
+	for (int i = 0; i < grid_cols; i++) {
+		line(grid_debug, Point(i*grid_cell.width, 0), Point(i*grid_cell.width, grid_debug.rows - 1), 255);
+	}
+	cv::imshow(std::to_string(idx) + "grid_debug" , grid_debug);
+#endif
+	int threshold_grid = grid_cell.height * grid_cell.width * EDGE_THRESHOLD_RATE;
+	int threshold_less_grid = grid_cell.height * grid_cell.width * EDGE_THRESHOLD_LESS_RATE;
+	vector<Point> vec_tr;
+	//vector<Point> vec_tlr;
+	//vector<Point> vec_tlr2;
+
+	Mat mat_count(grid_rows, grid_cols, CV_8UC1);
+	mat_count = 0;
+	int max_count = 0;
+	for (int j = 0; j < grid_rows; j++) {
+		for (int i = 0; i < grid_cols; i++) {
+			Mat& cell = canny(Range(j * grid_cell.height, grid_cell.height *(j + 1)), Range(i * grid_cell.width, grid_cell.width *(i + 1)));
+			//int count_width;
+			int split_count = 0;
 			int count = 0;
-			for (int _j = 0; _j < mask.height; _j++) {
-				for (int _i = 0; _i < mask.width; _i++) {
-					if (cell.at<uchar>(_j, _i) > 0)
-						count++;
+			for (int _j = 0; _j < grid_cell.width; _j++) {
+				int temp = 0;
+				for (int _i = 0; _i < grid_cell.height; _i++) {
+					if (cell.at<uchar>(_i, _j) > 100)
+						temp++;
+				}
+				//count_width = temp;
+				if (temp < 3)
+					split_count++;
+				count += temp;
+			}
+			//if (!split_count)
+			//	count = 0;
+			mat_count.at<uchar>(j, i) = count;
+			if (count > max_count)
+				max_count = count;
+		}
+	}
+	cout << "threshold_grid:" << threshold_grid << ", less:" << threshold_less_grid << endl;
+	cout << "max_count:" << max_count << endl;
+	Mat grid_bin(grid_rows, grid_cols, CV_8UC1);
+	int *count_v = new int[grid_rows];
+	int _rate = 0;
+	int plate_start_col, plate_start_row, plate_len = 0;
+	bool bFind = false;
+	while (true) {
+		grid_bin = 0;
+		memset(count_v, 0x00, grid_rows * sizeof(int));
+		vec_tr.clear();
+		threshold_grid = max_count * (0.9 - 0.1*_rate);
+		for (int j = 0; j < grid_rows; j++) {
+			for (int i = 0; i < grid_cols; i++) {
+				if (mat_count.at<uchar>(j, i) > threshold_grid) {
+					vec_tr.push_back(Point(i, j));
+					grid_bin.at<uchar>(j, i)++;
+					count_v[j]++;
 				}
 			}
-			if (count > threshold_grid)
-				grid(Range(j * mask.height, mask.height *(j + 1)), Range(i * mask.width, mask.width *(i + 1))) = 255;
+		}
+		int state = 0; // 0:disconnect 1:exist 2:1 disconnected 
+		int connected_count = 0;
+		int s;
+		for (int j = grid_rows - 1; j >=0; j--) {
+			if (count_v[j] >= 4) {
+				for (int i = 0; i < grid_cols; i++) {
+					int val = grid_bin.at<uchar>(j, i);
+					if (state == 0) {
+						if (val) {
+							state = 1;
+							s = i;
+							connected_count = 1;
+						}
+					}
+					else if (state == 1) {
+						if (val) {
+							connected_count++;
+						}
+						else {
+							state = 2;
+						}
+					}
+					else if (state == 2) {
+						if (val) {
+							connected_count += 2;
+							state = 1;
+						}
+						else {
+							state = 0;
+							connected_count = 0;
+							int len = i - s - 1;
+							if (len >= 4) {
+								cout << "find length:" << len << endl;
+								if (len > plate_len) {
+									plate_start_col = s;
+									plate_start_row = j;
+									plate_len = len;
+								}
+								bFind = true;
+							}
+
+						}
+					}
+				}
+			}
+			if (bFind)
+				break;
+		}
+		if (bFind)
+			break;
+		_rate++;
+	}
+	cout << "find start:row:" << plate_start_row << ",col:" << plate_start_col << ", plate_len:"<< plate_len << endl;
+#if 0
+	for (auto p : vec_tr) {
+		if (p.y > 1 && mat_count.at<uchar>(p.y - 1, p.x) > threshold_less_grid)
+			vec_tlr.push_back(Point(p.x, p.y - 1));
+		if (p.y < grid_rows - 1 && mat_count.at<uchar>(p.y + 1, p.x) > threshold_less_grid)
+			vec_tlr.push_back(Point(p.x, p.y + 1));
+		if (p.x > 1 && mat_count.at<uchar>(p.y, p.x - 1) > threshold_less_grid)
+			vec_tlr.push_back(Point(p.x - 1, p.y));
+		if (p.x < grid_cols - 1 && mat_count.at<uchar>(p.y, p.x + 1) > threshold_less_grid)
+			vec_tlr.push_back(Point(p.x + 1, p.y));
+		//grid(Range(j * mask.height, mask.height *(j + 1)), Range(i * mask.width, mask.width *(i + 1))) = 255;
+	}
+	for (auto p : vec_tlr) {
+		if (p.y > 1 && mat_count.at<uchar>(p.y - 1, p.x) > threshold_less_grid)
+			vec_tlr2.push_back(Point(p.x, p.y - 1));
+		if (p.y < grid_rows - 1 && mat_count.at<uchar>(p.y + 1, p.x) > threshold_less_grid)
+			vec_tlr2.push_back(Point(p.x, p.y + 1));
+		if (p.x > 1 && mat_count.at<uchar>(p.y, p.x - 1) > threshold_less_grid)
+			vec_tlr2.push_back(Point(p.x - 1, p.y));
+		if (p.x < grid_cols - 1 && mat_count.at<uchar>(p.y, p.x + 1) > threshold_less_grid)
+			vec_tlr2.push_back(Point(p.x + 1, p.y));
+		//grid(Range(j * mask.height, mask.height *(j + 1)), Range(i * mask.width, mask.width *(i + 1))) = 255;
+	}
+#endif
+//hough
+
+	drawGrid(grid, grid_cell, vec_tr);
+	//drawGrid(grid, mask, vec_tlr);
+	//drawGrid(grid, mask, vec_tlr2);
+	cv::imshow(std::to_string(idx) + "grid", grid);
+	vector<detectedLine> result_lines;
+	if (!detect_line(canny, Rect(plate_start_col*grid_cell.width, plate_start_row*grid_cell.height, plate_len*grid_cell.width, grid_cell.height), grid_cell.height * 0.5, result_lines)) {
+		printf("No line is detected!\n");
+		return false;
+	}
+#ifdef SHOW_DEBUG_LINE
+	Mat debug_line;
+	cvtColor(canny, debug_line, CV_GRAY2BGR);
+	for (auto line : result_lines) {
+		cout << "line:: start_x" << line.start_x << ", slope:" << line.slope << ", intercept_y:" << line.intercept_y << endl;
+		cv::line(debug_line, Point(line.start_x, line.slope*line.start_x + line.intercept_y), Point(line.end_x, line.slope*line.end_x + line.intercept_y), Scalar(0, 255, 0), 1);
+	}
+	cv::imshow(std::to_string(idx) + "debug_line", debug_line);
+#endif
+
+	vector<Point> outline;
+	find_outline(canny, Point((plate_start_col + plate_len * 0.5)* grid_cell.width, (plate_start_row + 0.5) * grid_cell.height), result_lines, outline);
+	cout << "outline point size:" << outline.size() << endl;
+
+	Mat debug_outline;
+	cvtColor(canny, debug_outline, CV_GRAY2BGR);
+	for (auto point : outline) {
+		debug_outline.at<Vec3b>(point) = Vec3b(0, 255, 0);
+	}
+	cv::imshow(std::to_string(idx) + "debug_outline", debug_outline);
+
+}
+
+Point pri_direction[9][7] = {
+	{Point(-1, 0), Point(-1,1), Point(-1, -1), Point(0, 1), Point(0, -1), Point(1,0), Point(1, -1)},
+	{ Point(0, -1), Point(1,-1), Point(-1, -1), Point(1, 0), Point(-1, 0), Point(1,1), Point(-1, 1) },
+	{ Point(1, 0), Point(1,1), Point(1, -1), Point(0, 1), Point(0, -1), Point(-1,0), Point(-1, -1) },
+	{ Point(-1, 0), Point(-1,-1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1,-1), Point(1, 1) },
+	{ Point(0,0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0)},
+	{ Point(1,0), Point(1, 1), Point(1, -1), Point(0, 1), Point(0, -1), Point(-1, 1), Point(-1, -1) },
+	{ Point(-1,0), Point(-1, -1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1, 0), Point(1, 1) },
+	{ Point(0,1), Point(-1, 1), Point(1, 1), Point(-1, 0), Point(1, 0), Point(-1, -1), Point(1, -1) },
+	{ Point(0,1), Point(1, 0), Point(1, 1), Point(1, -1), Point(0, -1), Point(-1, 1), Point(-1, 0) },
+};
+
+bool find_outline(Mat& img, Point center, vector<detectedLine>& detected_lines, vector<Point>& result_points)
+{
+#define THRESHOLD 150
+	//find point
+	int min = 1000;
+	int y;
+	int x = center.x;
+	for (auto line : detected_lines) {
+		int _y;
+		_y = line.slope * x + line.intercept_y;
+		float d = abs(_y - center.y);
+		if (min > d) {
+			min = d;
+			y = _y;
 		}
 	}
-	cv::imshow("grid", grid);
+	if (img.at<uchar>(y, x) < THRESHOLD) {
+		if (img.at<uchar>(y - 1, x) > THRESHOLD) {
+			y--;
+		}
+		else if (img.at<uchar>(y + 1, x) > THRESHOLD) {
+			y++;
+		}
+		else
+			return false;
+	}
+	cout << "find point (" << x << ", " << y << ")" << endl;
+	Point start(x, y);
+	result_points.push_back(start);
 
+	Point _p = start;
+	int dir;
+	if (start.y < center.y)
+		dir = 5;
+	else
+		dir = 3;
+	while (true) {
+		bool bFind = false;
+		for (int i = 0; i < 7; i++) {
+			x = _p.x + pri_direction[dir][i].x;
+			y = _p.y + pri_direction[dir][i].y;
+			if (x < 0 || x > img.cols - 1 || y < 0 || y > img.rows - 1)
+				continue;
+			if (img.at<uchar>(y, x) >= THRESHOLD) {
+				bFind = true;
+				break;
+			}
+		}
+		if (!bFind) {
+			cout << "not found point\n" << endl;
+			return false;
+		}
+		if (x == start.x && y == start.y) {
+			return true;
+		}
+		result_points.push_back(Point(x, y));
+		dir = (y - _p.y + 1) * 3 + x - _p.x + 1;
+		_p.x = x;
+		_p.y = y;
+	}
+	return true;
+}
+
+
+
+bool detect_line(Mat& img, Rect rect, int delta, vector<detectedLine>& result_lines)
+{
+	int i = 0;
+	//Rect temp;
+	bool bFind = false;
+	for(int i = 0; i < 4; i++){
+		int end_y = std::min(img.rows - 1, rect.y + rect.height + i* delta);
+		rect.y = std::max(0, rect.y - i* delta);
+		rect.height = end_y - rect.y + 1;
+		cout << "**Detect Line Rect " << i << " [(" << rect.y << ", " << rect.height << ")]" << endl;
+		//canny
+		//Mat canny;
+		Mat roi = img(rect);
+		//Canny(roi, canny, 200, 200);
+		//cv::imshow("roi" + to_string(i), roi);
+
+		//hough
+		Mat hough;
+		double delta_rho = 1, delta_theta = CV_PI / 180;
+
+		vector<Vec2f> vec_line;
+		HoughLines(roi, vec_line, delta_rho, delta_theta, rect.width * 0.6);
+		cout << "detect line count " << vec_line.size() << endl;
+		for (auto line : vec_line) {
+			float rho = line[0];
+			float theta = line[1];
+			if (theta > 1.57 - 0.2 && theta < 1.57 + 0.2) {
+				detectedLine dl;
+				cout << "line: rho:" << rho << ", theta:" << theta << "(" << theta * 180 / 3.141592 << ")" << endl;
+				dl.slope = -1. / tan(theta);
+				dl.intercept_y = rho / sin(theta) + rect.y - dl.slope*rect.x;
+				dl.start_x = rect.x;
+				dl.end_x = rect.x + rect.width - 1;
+				result_lines.push_back(dl);
+				bFind = true;
+			}
+		}
+		if (bFind)
+			break;
+		//draw_houghLines(roi, hough, _vec_line, 3);
+
+		//for (Vec2f line : _vec_line) {
+		//	findLineSegment(roi, line, h_end / 3);
+		//	cout << "-----------------------------------" << endl;
+		//}
+		//cv::imshow("hough" + to_string(i++), hough);
+		//break;
+	}
+	return bFind;
+}
+const char* points_xml[] = {
+	"points_174_UL1.xml",
+	"points_174_UR1.xml",
+	"points_174_D.xml",
+	"points_174_DL1.xml",
+	"points_174_DR1.xml"
+};
+
+int main()
+{
+	cv::Mat image; // create an empty image
+	image = cv::imread("capture_174.jpg");
+	if (image.empty()) { // error handling
+						 // no image has been created¡¦
+						 // possibly display an error message
+						 // and quit the application
+		cv::waitKey(0);
+	}
+
+	//getPoints("points_174_UL1.xml", points, board_size, plate_size);
+	//getPoints("points_174_UR1.xml", points, board_size, plate_size);
+	//getPoints("points_174_D.xml", points, board_size, plate_size);
+	//getPoints("points_174_DL1.xml", points, board_size, plate_size);
+	//getPoints("points_174_DR1.xml", points, board_size, plate_size);
+	for (int i = 0; i < sizeof(points_xml) / sizeof(char*); i++) {
+		test(image, points_xml[i], i);
+	}
+
+#if 0
 #define CHAR_COUNT 7
 
 	int max = 0;
@@ -504,9 +782,9 @@ int main()
 	vector<Range> vec_bands;
 	bool bInBand = false;
 	int start_r;
-	int needed_band_pixel = CHAR_COUNT * FONT_WIDTH * factor * EDGE_THRESHOLD_RATE; // canny.cols / 10;
+	int needed_band_pixel = std::max(((CHAR_COUNT + 2) * 2), int(CHAR_COUNT * FONT_WIDTH * factor * EDGE_THRESHOLD_RATE)); // canny.cols / 10;
 	int needed_band_width = FONT_HEIGHT * factor;	
-	cout << "band pixel:" << needed_band_pixel << ", width:" << needed_band_width << endl;
+	cout << "needed band pixel:" << needed_band_pixel << ", width:" << needed_band_width << endl;
 	for (int r = 0; r < canny.rows; r++) {
 		int count = 0;
 		for (int c = 0; c < canny.cols; c++) {
@@ -554,9 +832,9 @@ int main()
 	int i = 0;
 	for (auto band : vec_bands) {
 		int v_start = std::max(band.start - 15, 0);
-		int v_end = std::min(band.end + 15, gray_dewarped2.rows - 1);
+		int v_end = std::min(band.end + 15, canny.rows - 1);
 		int h_start = 0;
-		int h_end = gray_dewarped2.cols;
+		int h_end = canny.cols;
 		cout << "**band " << i << " [(" << h_start <<", " << v_start << ")-(" << h_end <<", " << v_end << ")]" <<  endl;
 		//canny
 		//Mat canny;
@@ -595,7 +873,7 @@ int main()
 				_vec_line.push_back(line);
 			}
 		}
-		draw_houghLines(roi, hough, _vec_line, 5);
+		draw_houghLines(roi, hough, _vec_line, 3);
 #endif
 		for (Vec2f line : _vec_line) {
 			findLineSegment(roi, line, h_end / 3);
@@ -604,7 +882,7 @@ int main()
 		cv::imshow("hough" + to_string(i++), hough);
 		//break;
 	}
-	
+#endif	
 
 	cv::waitKey(0);
     return 0;
