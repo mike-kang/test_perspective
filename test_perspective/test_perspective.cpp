@@ -595,7 +595,7 @@ bool test(Mat& image, const char* xml, int idx)
 		printf("No line is detected!\n");
 		return false;
 	}
-#ifdef SHOW_DEBUG_LINE
+#if 1//def SHOW_DEBUG_LINE
 	Mat debug_line;
 	cvtColor(canny, debug_line, CV_GRAY2BGR);
 	for (auto line : result_lines) {
@@ -620,20 +620,180 @@ bool test(Mat& image, const char* xml, int idx)
 	cv::imshow(std::to_string(idx) + "debug_outline2", debug_outline2);
 
 }
-
-Point pri_direction[9][7] = {
-	{Point(-1, 0), Point(-1,1), Point(-1, -1), Point(0, 1), Point(0, -1), Point(1,0), Point(1, -1)},
-	{ Point(0, -1), Point(1,-1), Point(-1, -1), Point(1, 0), Point(-1, 0), Point(1,1), Point(-1, 1) },
-	{ Point(1, 0), Point(1,1), Point(1, -1), Point(0, 1), Point(0, -1), Point(-1,0), Point(-1, -1) },
-	//{ Point(-1, 0), Point(-1,-1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1,-1), Point(1, 1) },
-	{ Point(0, -1), Point(-1,-1), Point(-1, 0), Point(1, -1), Point(0, 1), Point(-1,1), Point(1, 1) },
-	{ Point(0,0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0)},
-	{ Point(1,0), Point(1, 1), Point(1, -1), Point(0, 1), Point(0, -1), Point(-1, 1), Point(-1, -1) },
-	{ Point(-1,0), Point(-1, -1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1, 0), Point(1, 1) },
-	//{ Point(0,1), Point(-1, 1), Point(1, 1), Point(-1, 0), Point(1, 0), Point(-1, -1), Point(1, -1) },
-	{ Point(-1, 0), Point(-1,1), Point(0, 1), Point(-1, -1), Point(1, 0), Point(1,1), Point(1, -1) },
-	{ Point(0,1), Point(1, 0), Point(1, 1), Point(1, -1), Point(0, -1), Point(-1, 1), Point(-1, 0) },
+struct direction {
+	int count;
+	Point val[5];
 };
+direction pri_direction[9] = {
+	//{Point(-1, 0), Point(-1,1), Point(-1, -1), Point(0, 1), Point(0, -1), Point(1,0), Point(1, -1)},
+	{ 5, {Point(0, -1), Point(-1,0), Point(-1, -1), Point(1, -1), Point(-1, 1) }},
+	{ 3, {Point(0, -1), Point(1,-1), Point(-1, -1), Point(0, 0), Point(0, 0) }},
+	{ 5, {Point(1, 0), Point(0,-1), Point(1, -1), Point(1, 1), Point(-1, -1) }},
+	//{ Point(-1, 0), Point(-1,-1), Point(-1, 1), Point(0, -1), Point(0, 1), Point(1,-1), Point(1, 1) },
+	{ 3, {Point(-1, 0), Point(-1,-1), Point(-1,1), Point(0, 0), Point(0, 0)} },
+	{ 0, {Point(0,0), Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0)}},
+	{ 3, {Point(1,0), Point(1, 1), Point(1, -1), Point(0, 0), Point(0, 0)} },
+	{ 5, {Point(-1,0), Point(0, 1), Point(-1, 1), Point(1, 1), Point(-1, -1) }},
+	//{ Point(0,1), Point(-1, 1), Point(1, 1), Point(-1, 0), Point(1, 0), Point(-1, -1), Point(1, -1) },
+	{ 3 ,{Point(0, 1), Point(-1,1), Point(1, 1), Point(0, 0), Point(0, 0) }},
+	//{ Point(0,1), Point(1, 0), Point(1, 1), Point(1, -1), Point(0, -1), Point(-1, 1), Point(-1, 0) },
+	{ 5, {Point(0,1), Point(1, 0), Point(1, 1), Point(1, -1), Point(-1, 1) }},
+
+};
+//return 0: disconnect 1:
+bool find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_points, vector<Point>::iterator& itr, bool bStart)
+{
+#define THRESHOLD 150
+	if (!bStart && start == end) {
+		return true;
+	}
+	//cout << "1 (" << start.x << "," << start.y << ")" << endl;
+	result_points.push_back(start);
+	auto start_itr = result_points.end() - 1;
+	itr = start_itr;
+
+	int disconnet_count = 0;
+	bool bFind = false;
+	bool bDisconnect = false;
+	direction& _direction = pri_direction[dir];
+	vector<Point> target;
+	for (int i = 0; i < _direction.count; i++) {
+		int _x, _y;
+		_x = start.x + _direction.val[i].x;
+		_y = start.y + _direction.val[i].y;
+		if (_x < 0 || _x > img.cols - 1 || _y < 0 || _y > img.rows - 1) {
+			//bReachEnd = true;
+			continue;
+		}
+		if (img.at<uchar>(_y, _x) >= THRESHOLD) {
+			target.push_back(Point(_x, _y));
+		}
+	}
+	//cout << "target count " << target.size() << endl;
+	if (target.size() > 1) {
+		for (auto p : target) {
+			vector<Point>::iterator _itr;
+			bool ret = find_path(img, p, end, (p.y - start.y + 1) * 3 + p.x - start.x + 1, result_points, _itr, false);
+			if (!ret) {
+				//result_points.erase(_itr, result_points.end());
+			}
+			else
+				return true;
+		}
+		return false;
+	}
+	else if (target.size() == 0) {
+		bDisconnect = true;
+		cout << "1 disconnect count:" << endl;
+		return false;
+	}
+
+	//if (breachend) {
+	//	cout << "reach end" << endl;
+	//	return false;
+	//}
+	Point _p = start;
+	Point p = target[0];
+	while(true){
+		bool ret;
+		//cout << "2 (" << p.x << "," << p.y << ")" << endl;
+
+		result_points.push_back(p);
+		dir = (p.y - _p.y + 1) * 3 + p.x - _p.x + 1;
+		_direction = pri_direction[dir];
+		target.clear();
+		for (int i = 0; i < _direction.count; i++) {
+			int _x, _y;
+			_x = p.x + _direction.val[i].x;
+			_y = p.y + _direction.val[i].y;
+			if (_x < 0 || _x > img.cols - 1 || _y < 0 || _y > img.rows - 1) {
+				//bReachEnd = true;
+				continue;
+			}
+			if (img.at<uchar>(_y, _x) >= THRESHOLD) {
+				target.push_back(Point(_x, _y));
+			}
+		}
+		//cout << "2 target count " << target.size() << endl;
+
+		if (target.size() > 1) {
+			for (auto pp : target) {
+				vector<Point>::iterator _itr;
+				bool ret = find_path(img, pp, end, (pp.y - p.y + 1) * 3 + pp.x - p.x + 1, result_points, _itr, false);
+				if (!ret) {
+					//result_points.erase(_itr, result_points.end());
+				}
+				else
+					return true;
+			}
+			return false;
+		}
+		else if (target.size() == 0) {
+			bDisconnect = true;
+			cout << "2 disconnect count:" << endl;
+			return false;
+		}
+
+		//cout << "(" << x << "," << y << ")" << endl;
+		_p = p;
+		p = target[0];
+		//dir = (p.y - _p.y + 1) * 3 + p.x - _p.x + 1;
+
+
+
+#if 0
+		if (bDisconnect) {
+			disconnet_count++;
+			cout << "disconnect count:" << disconnet_count << endl;
+			switch (dir) {
+			case 0:
+			case 2:
+			case 6:
+			case 8:
+				cout << "not found point" << endl;
+				return false;
+			case 1: {
+				result_points.push_back(Point(start.x, start.y - 1));
+				vector<Point>::iterator _itr;
+				ret = find_path(img, Point(start.x, start.y - 1), end, dir, result_points, _itr, false);
+				if (!ret) {
+					result_points.erase(_itr, result_points.end());
+				}
+				return ret;
+			}
+			case 3: {
+				vector<Point>::iterator _itr;
+				ret = find_path(img, Point(start.x - 1, start.y), end, dir, result_points, _itr, false);
+				if (!ret) {
+					result_points.erase(_itr, result_points.end());
+				}
+				return ret;
+			}
+			case 5: {
+				vector<Point>::iterator _itr;
+				ret = find_path(img, Point(start.x + 1, start.y), end, dir, result_points, _itr, false);
+				if (!ret) {
+					result_points.erase(_itr, result_points.end());
+				}
+				return ret;
+			}
+			case 7: {
+				vector<Point>::iterator _itr;
+				ret = find_path(img, Point(start.x, start.y + 1), end, dir, result_points, _itr, false);
+				if (!ret) {
+					result_points.erase(_itr, result_points.end());
+				}
+				return ret;
+			}
+			}	//switch
+		}
+#endif
+
+	}
+
+
+
+}
 
 bool find_outline(Mat& img, Point center, vector<detectedLine>& detected_lines, vector<Point>& result_points)
 {
@@ -662,8 +822,9 @@ bool find_outline(Mat& img, Point center, vector<detectedLine>& detected_lines, 
 			return false;
 	}
 	cout << "find point (" << x << ", " << y << ")" << endl;
+
 	Point start(x, y);
-	result_points.push_back(start);
+	//result_points.push_back(start);
 
 	Point _p = start;
 	int dir;
@@ -671,64 +832,12 @@ bool find_outline(Mat& img, Point center, vector<detectedLine>& detected_lines, 
 		dir = 5;
 	else
 		dir = 3;
-	int disconnet_count = 0;
-	while (true) {
-		bool bFind = false;
-		bool bReachEnd = false;
-		for (int i = 0; i < 7; i++) {
-			int _x, _y;
-			_x = _p.x + pri_direction[dir][i].x;
-			_y = _p.y + pri_direction[dir][i].y;
-			if (_x < 0 || _x > img.cols - 1 || _y < 0 || _y > img.rows - 1) {
-				bReachEnd = true;
-				continue;
-			}
-			if (img.at<uchar>(_y, _x) >= THRESHOLD) {
-				x = _x;
-				y = _y;
-				bFind = true;
-				break;
-			}
-		}
-		if (bReachEnd) {
-			cout << "Reach end" << endl;
-			break;
-		}
-		if (!bFind) {
-			disconnet_count++;
-			cout << "disconnect count:" << disconnet_count << endl;
-			switch (dir) {
-			case 0:
-			case 2:
-			case 6:
-			case 8:
-				cout << "not found point" << endl;
-				break;
-			case 1:
-				y--;
-				break;
-			case 3:
-				x--;
-				break;
-			case 5:
-				x++;
-				break;
-			case 7:
-				y++;
-				break;
-		
-			}
-		}
-		if (x == start.x && y == start.y) {
-			return true;
-		}
-		result_points.push_back(Point(x, y));
-		cout << "(" << x << "," << y << ")" << endl;
-		dir = (y - _p.y + 1) * 3 + x - _p.x + 1;
-		_p.x = x;
-		_p.y = y;
-	}
-	return true;
+
+	vector<Point>::iterator _itr;
+	bool ret = find_path(img, start, start, dir, result_points, _itr, true);
+	
+	return ret;
+
 }
 
 
@@ -785,10 +894,10 @@ bool detect_line(Mat& img, Rect rect, int delta, vector<detectedLine>& result_li
 }
 const char* points_xml[] = {
 	"points_174_UL1.xml",
-	"points_174_UR1.xml",
-	"points_174_D.xml",
-	"points_174_DL1.xml",
-	"points_174_DR1.xml"
+	//"points_174_UR1.xml",
+	//"points_174_D.xml",
+	//"points_174_DL1.xml",
+	//"points_174_DR1.xml"
 };
 
 int main()
