@@ -740,10 +740,10 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 
 		result_points.push_back(p);
 		//cout << "22 (" << itr->x << "," << itr->y << ")" << endl;
+		dir = DIR(_p.x, _p.y, p.x, p.y);
 
 		track.at<uchar>(p) |= dir_mask[dir];
 
-		dir = (p.y - _p.y + 1) * 3 + p.x - _p.x + 1;
 		direction_info = &pri_direction[dir];
 		target.clear();
 		for (int i = 0; i < direction_info->count; i++) {
@@ -754,7 +754,7 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 				bReachEnd = true;
 				continue;
 			}
-			int _dir = DIR(start.x, start.y, _x, _y);
+			int _dir = DIR(p.x, p.y, _x, _y);
 			if (track.at<uchar>(_y, _x) & dir_mask[_dir] == dir_mask[_dir])
 				continue;
 			if (img.at<uchar>(_y, _x) >= THRESHOLD) {
@@ -789,6 +789,25 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 				return 2;
 			}
 			cout << "2 disconnect count:" << endl;
+#if 0
+			switch (dir) {
+			case 0:
+			case 2:
+			case 6:
+			case 8:
+				cout << "not found point" << endl;
+				break;
+
+			case 3: {
+				vector<Point>::iterator _itr;
+				ret = find_path(img, Point(start.x - 1, start.y), end, dir, result_points, _itr, false);
+				if (!ret) {
+					result_points.erase(_itr, result_points.end());
+				}
+				return ret;
+			}
+			}
+#endif
 			return 1;
 		}
 
@@ -953,11 +972,11 @@ bool detect_line(Mat& img, Rect rect, int delta, vector<detectedLine>& result_li
 	return bFind;
 }
 const char* points_xml[] = {
-	"points_174_UL1.xml",
-	"points_174_UR1.xml",
-	"points_174_D.xml",
+	//"points_174_UL1.xml",
+	//"points_174_UR1.xml",
+	//"points_174_D.xml",
 	"points_174_DL1.xml",
-	"points_174_DR1.xml"
+	//"points_174_DR1.xml"
 };
 
 int main()
