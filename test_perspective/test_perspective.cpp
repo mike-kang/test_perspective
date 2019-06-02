@@ -654,6 +654,9 @@ direction pri_direction[9] = {
 	{ 5, {Point(0,1), Point(1, 0), Point(1, 1), Point(1, -1), Point(-1, 1) }},
 
 };
+
+uchar dir_mask[9] = { 9, 1, 3, 8, 0, 2, 12, 4, 6 };
+#define DIR(_x,_y, x,y) ((y - _y + 1) * 3  + x - _x + 1)
 //return 0:success 1:disconnect 2:reachEnd 
 int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_points, vector<Point>::iterator& itr, bool bStart, Mat& track)
 {
@@ -665,7 +668,7 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 	//cout << "1 (" << start.x << "," << start.y << ")" << endl;
 
 	result_points.push_back(start);
-	track.at<uchar>(start) = 1;
+	track.at<uchar>(start) |= dir_mask[dir];
 	//auto start_itr = result_points.end() - 1;
 	itr = result_points.end() - 1;
 	//cout << "11 (" << itr->x << "," << itr->y << ")" << endl;
@@ -683,7 +686,8 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 			bReachEnd = true;
 			continue;
 		}
-		if (track.at<uchar>(_y, _x) > 0)
+		int _dir = DIR(start.x, start.y, _x, _y);
+		if (track.at<uchar>(_y, _x) & dir_mask[_dir] == dir_mask[_dir])
 			continue;
 		if (img.at<uchar>(_y, _x) >= THRESHOLD ) {
 			target.push_back(Point(_x, _y));
@@ -695,7 +699,7 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 
 		for (auto p : target) {
 			vector<Point>::iterator _itr;
-			int ret = find_path(img, p, end, (p.y - start.y + 1) * 3 + p.x - start.x + 1, result_points, _itr, false, track);
+			int ret = find_path(img, p, end, DIR(start.x, start.y, p.x, p.y), result_points, _itr, false, track);
 			if (ret == 0)
 				return 0;
 			else if (ret == 1) {
@@ -737,7 +741,7 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 		result_points.push_back(p);
 		//cout << "22 (" << itr->x << "," << itr->y << ")" << endl;
 
-		track.at<uchar>(p) = 1;
+		track.at<uchar>(p) |= dir_mask[dir];
 
 		dir = (p.y - _p.y + 1) * 3 + p.x - _p.x + 1;
 		direction_info = &pri_direction[dir];
@@ -750,7 +754,8 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 				bReachEnd = true;
 				continue;
 			}
-			if (track.at<uchar>(_y, _x) > 0)
+			int _dir = DIR(start.x, start.y, _x, _y);
+			if (track.at<uchar>(_y, _x) & dir_mask[_dir] == dir_mask[_dir])
 				continue;
 			if (img.at<uchar>(_y, _x) >= THRESHOLD) {
 				target.push_back(Point(_x, _y));
@@ -762,7 +767,7 @@ int find_path(Mat& img, Point start, Point end, int dir, vector<Point>& result_p
 			bool bDisconnect = false;
 			for (auto pp : target) {
 				vector<Point>::iterator _itr = result_points.begin();
-				int ret = find_path(img, pp, end, (pp.y - p.y + 1) * 3 + pp.x - p.x + 1, result_points, _itr, false, track);
+				int ret = find_path(img, pp, end, DIR(p.x, p.y, pp.x, pp.y), result_points, _itr, false, track);
 				if (ret == 0)
 					return 0;
 				else if (ret == 1) {
@@ -948,11 +953,11 @@ bool detect_line(Mat& img, Rect rect, int delta, vector<detectedLine>& result_li
 	return bFind;
 }
 const char* points_xml[] = {
-	//"points_174_UL1.xml",
-	//"points_174_UR1.xml",
+	"points_174_UL1.xml",
+	"points_174_UR1.xml",
 	"points_174_D.xml",
-	//"points_174_DL1.xml",
-	//"points_174_DR1.xml"
+	"points_174_DL1.xml",
+	"points_174_DR1.xml"
 };
 
 int main()
