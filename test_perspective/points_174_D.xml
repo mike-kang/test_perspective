@@ -1,13 +1,16 @@
 <?xml version="1.0"?>
 <opencv_storage>
+<position>
+  "down"
+</position>
 <points>
-  1991. 2505.
-  1698. 2496.
-  1724. 2366.
-  1973. 2374.
+  2074. 2667.
+  1668. 2661.
+  1703. 2435.
+  2032. 2441.
 </points>
 <board_size>
-  833 590    
+  1180 1040    
 </board_size>
 <plate_size>
   310 100    

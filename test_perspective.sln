@@ -5,6 +5,8 @@ VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test_perspective", "test_perspective\test_perspective.vcxproj", "{8B7555E1-5630-4E80-8F88-BE58F3AFB96B}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "testDewarp", "testDewarp\testDewarp.vcxproj", "{1FDCD8F2-2C12-430B-9908-9196633A69EB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,14 @@ Global
 		{8B7555E1-5630-4E80-8F88-BE58F3AFB96B}.Release|x64.Build.0 = Release|x64
 		{8B7555E1-5630-4E80-8F88-BE58F3AFB96B}.Release|x86.ActiveCfg = Release|Win32
 		{8B7555E1-5630-4E80-8F88-BE58F3AFB96B}.Release|x86.Build.0 = Release|Win32
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Debug|x64.ActiveCfg = Debug|x64
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Debug|x64.Build.0 = Debug|x64
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Debug|x86.ActiveCfg = Debug|Win32
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Debug|x86.Build.0 = Debug|Win32
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Release|x64.ActiveCfg = Release|x64
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Release|x64.Build.0 = Release|x64
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Release|x86.ActiveCfg = Release|Win32
+		{1FDCD8F2-2C12-430B-9908-9196633A69EB}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

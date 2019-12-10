@@ -4,9 +4,11 @@
 #include "stdafx.h"
 #include <opencv2/opencv.hpp>
 #include <vector>
-#include "lens.h"
 #include <algorithm>
-//#include "HoughLines.h"
+#include "Dewarp.h"
+#include "FindGroup.h"
+#include "FloodFill.h"
+#include "colorfunc.h"
 
 using namespace cv;
 using namespace std;
@@ -14,137 +16,43 @@ using namespace std;
 #define M_PI 3.141592
 #define TO_RADIAN(x) ((x)/180.0 * 3.141592)
 
+#define GROUP_DEBUG
 #define SHOW_BAND
 //#define SHOW_GRID_DEBUG
 //extern void houghLines(Mat src, vector<Vec3f>& s_lines, double rho, double theta, int thresh);
 
-Point2f center;
+//Point2f center;
 Point2f image_start;
-double fl;
+//double fl;
 vector<Point2f> object_points;
 
-void getPoints(const char* filename, vector<Point2f>& points, Size& board_size, Size& plate_size)
+enum Position {
+	POS_UL,
+	POS_U,
+	POS_UR,
+	POS_DL,
+	POS_D,
+	POS_DR,
+	POS_MAX
+};
+const char* str_pos[] = { "upleft", "up", "upright", "downleft", "down", "downright" };
+void getPoints(const char* filename, vector<Point2f>& points, Size& board_size, Size& plate_size, Position& position)
 {
 	FileStorage fs_P(filename, FileStorage::READ);
 	CV_Assert(fs_P.isOpened());
 	fs_P["points"] >> points;
 	fs_P["board_size"] >> board_size;
-	fs_P["plate_size"] >> plate_size;
+	//fs_P["plate_size"] >> plate_size;
+	string pos;
+	fs_P["position"] >> pos;
+	for (int i = 0; i < POS_MAX; i++) {
+		if (pos == str_pos[i]) {
+			position = (Position)i;
+			break;
+		}
+	}
+
 	fs_P.release();
-}
-
-//센서상의 점들에서 왜곡을 제거한 p'를 구한다. 
-vector<Point2f>& cal_points_(vector<Point2f>& src, vector<Point2f>&dst)
-{
-	float k;
-	for (auto p : src) {
-		Point2f p_0, p_;
-		Point2f p0 = p - center;
-
-		double length = norm(p0);
-		double k = length / fl;
-		float theta_;	//입사각
-		findAngle(k, theta_);
-		float length_ = fl * tan(theta_);
-		p_0 = length_ / length * p0;
-		p_ = p_0;
-		dst.push_back(p_);
-	}
-	return dst;
-}
-
-Point2f& cal_points(Point2f& p_, Point2f& p)
-{
-	Point2f p0;
-	Point2f p_0 = p_;
-	float k;
-
-	float length_ = norm(p_0);
-	float theta_ = atan(length_ / fl);
-
-	findk(theta_, k);
-	float length = k * fl;
-	p0 = length / length_ * p_0;
-	p = p0 + center;
-
-	return p;
-}
-
-//왜곡없는 점들에서 왜곡이 포함된 점들을 구한다.
-vector<Point2f>& cal_points(vector<Point2f>& src, vector<Point2f>&dst)
-{
-	float k;
-	for (auto p_ : src) {
-		Point2f p0, p;
-		Point2f p_0 = p_;
-
-		float length_ = norm(p_0);
-		float theta_ = atan(length_ / fl);
-
-		findk(theta_, k);
-		float length = k * fl;
-		p0 = length / length_ * p_0;
-		p = p0 + center;
-		dst.push_back(p);
-
-		return dst;
-	}
-}
-
-void cal_points(Mat& src, Mat& dst)
-{
-	float k;
-
-	for (int j = 0; j < dst.rows; j++) {
-		for (int i = 0; i < dst.cols; i++) {
-			Point2f temp;
-			cal_points(Point2f(src.at<Vec2f>(j, i)), temp);
-			dst.at<Vec2f>(j, i)[0] = temp.x;
-			dst.at<Vec2f>(j, i)[1] = temp.y;
-		}
-	}
-}
-void calHomography(vector<Point2f>& P_points, vector<Point2f>& points, Mat& h)
-{
-	//cout << "points" << endl << points << endl;
-
-	h = findHomography(P_points, points, NULL);
-
-	vector<Point2f> dst;
-	perspectiveTransform(P_points, dst, h);
-	//cout << "dst" << endl << dst << endl;
-	float sum = 0;
-	for (int i = 0; i < points.size(); i++) {
-		sum += norm(points[i] - dst[i]);
-	}
-	cout << "fl= " << fl << ", sum= " << sum << endl;
-	//}
-	//cout << dst << endl;
-}
-
-void makeImage(Mat& src_image, Mat& dst, Mat& h)
-{
-	int width = dst.cols;
-	int height = dst.rows;
-
-	Mat mat_dst_points(height, width, CV_32FC2);
-	for (int j = 0; j < height; j++) {
-		for (int i = 0; i < width; i++) {
-			mat_dst_points.at<Vec2f>(j, i)[0] = i;
-			mat_dst_points.at<Vec2f>(j, i)[1] = j;
-		}
-	}
-	Mat mat_points_(height, width, CV_32FC2);
-	perspectiveTransform(mat_dst_points, mat_points_, h);
-	Mat mat_p(height, width, CV_32FC2);
-	cal_points(mat_points_, mat_p);
-	int col, row;
-	for (int j = 0; j < height; j++) {
-		for (int i = 0; i < width; i++) {
-			dst.at<Vec3b>(j, i) = src_image.at<Vec3b>(Point2i(mat_p.at<Vec2f>(j,i)));
-
-		}
-	}
 }
 
 void draw_houghLines(Mat src, Mat&dst, vector<Vec2f>& lines, int nline)
@@ -376,56 +284,106 @@ struct detectedLine {
 bool detect_line(Mat& img, Rect rect, int delta, vector<detectedLine>& result_lines);
 bool find_outline(Mat& img, Point center, vector<detectedLine>& detected_lines, vector<Point>& result_points, Mat& track);
 
-bool test(Mat& image, const char* xml, int idx)
-{
-	center.x = 1937;
-	center.y = 1488;
-	float factor;;
-	fl = 950;
+#define TO_PIXEL(x, factor) (x * factor)
 
+enum PointType {
+	TL,
+	TR,
+	BR,
+	BL
+};
+struct PointEx {
+	PointEx(Point2i p, PointType pt) :m_point(p), m_pt(pt) {}
+	Point2i m_point;
+	PointType m_pt;
+};
+
+
+void pointsPushRectGreen(Mat img, vector<Point2i>& points, Rect rect, bool (*font_func)(Vec3b), bool(*bg_func)(Vec3b), Position pos)
+{
+	Point2i point_delta;
+	int factor;
+	if (pos == POS_U || pos == POS_UL || pos == POS_UR)
+		factor = 1;
+	else
+		factor = -1;
+	Point2i rectPoints[] = { rect.tl(), rect.tl() + Point2i(rect.width, 0), rect.br(), rect.br() - Point2i(rect.width, 0) };
+	Point2i deltaPoints[] = {  Point2i(1,1), Point2i(-1,1), Point2i(-1,-1), Point2i(1, -1) };
+	for (int i = 0; i < 4; i++) {
+		Point2i p = rectPoints[i];
+		point_delta = deltaPoints[i];
+		while (!(*font_func)(img.at<Vec3b>(p))) {
+			p += point_delta;
+		}
+		while (!(*bg_func)(img.at<Vec3b>(p))) {
+			p -= point_delta;
+		}
+		if (!rect.contains(p)) {
+			cout << "point not included" << endl;
+		}
+		else
+			points.push_back(p);
+	}
+}
+
+
+
+bool findPlate(Mat& image, const char* xml, int idx)
+{
+	Point2f center;
+	//Point2f image_start;
+
+	//center.x = 1937;
+	//center.y = 1488;
+	center.x = 1950;
+	center.y = 1511;
+	float factor; 
+	Dewarp dewarpObj(Dewarp::CameraParam(950, center));
 	cout << "*************************test " << idx << endl;
-	Mat homograpy;
+	//Mat homograpy;
 
 	vector<Point2f> points;
-	vector<Point2f> points_;
+	//vector<Point2f> points_;
 	vector<Point2f> dst_points;
-	Size board_size, plate_size;
-
-	getPoints(xml, points, board_size, plate_size);
+	Size board_size_mm/*(mm,mm)*/, plate_size;
+	Size board_size;
+	Position position;
+	getPoints(xml, points, board_size_mm, plate_size, position);
 
 	float effective_pixel = calArea(points);
 	cout << "effective_pixel:" << effective_pixel << endl;
-	factor = sqrt(effective_pixel / board_size.width / board_size.height);
+	factor = sqrt(effective_pixel / board_size_mm.width / board_size_mm.height) * 1.3;
 	//Size dst_size(450, 250);
 	cout << "factor:" << factor << endl;
-	board_size.width = board_size.width * factor;
-	board_size.height = board_size.height * factor;
+	board_size.width = TO_PIXEL(board_size_mm.width, factor);
+	board_size.height = TO_PIXEL(board_size_mm.height, factor);
 
 #define OFFSET_X 0 // mm
 #define OFFSET_Y 0 // mm
-#define ADD_X 100 //mm
+#define ADD_X 0 //300 //mm
 
 	//plate_size /= factor;	//not used
-	int offset_x = OFFSET_X * factor;
-	int offset_y = OFFSET_Y * factor;
-	int add_x = ADD_X * factor;
+	int offset_x = TO_PIXEL(OFFSET_X, factor);
+	int offset_y = TO_PIXEL(OFFSET_Y, factor);
+	int add_x = TO_PIXEL(ADD_X, factor);
 	dst_points.push_back(Point2f{ (float)offset_x,(float)offset_y });
 	dst_points.push_back(Point2f{ (float)board_size.width - 1 + offset_x, (float)offset_y });
 	dst_points.push_back(Point2f{ (float)board_size.width - 1 + offset_x, (float)board_size.height - 1 + offset_y });
 	dst_points.push_back(Point2f{ (float)offset_x, (float)board_size.height - 1 + offset_y });
-	calHomography(dst_points, cal_points_(points, points_), homograpy);
-	cout << "homography" << endl << homograpy << endl;
+	
+	dewarpObj.calHomography(dst_points, points);
+	//cout << "homography" << endl << homograpy << endl;
 
 	Mat dewarped(board_size.height + offset_y, board_size.width + offset_x + add_x, CV_8UC3);
 	cout << "dewarped width:" << board_size.width + offset_x << ", height:" << board_size.height + offset_y << endl;
 
-	makeImage(image, dewarped, homograpy);
+	dewarpObj.makeImage(image, dewarped);
 	cv::imshow("dewarped" + std::to_string(idx), dewarped);
-	imwrite("result.jpg", dewarped);
+	//imwrite("dewarped.jpg", dewarped);
 
 	Mat gray_dewarped(dewarped.rows, dewarped.cols, CV_8UC1);
 	cvtColor(dewarped, gray_dewarped, CV_BGR2GRAY);
-	cv::imshow("gray_dewarped" + std::to_string(idx), gray_dewarped);
+	//cv::imshow("gray_dewarped" + std::to_string(idx), gray_dewarped);
 
 	//hist
 	//Mat hist;
@@ -435,21 +393,135 @@ bool test(Mat& image, const char* xml, int idx)
 	//canny
 	Mat canny;
 	//Mat roi = edge_h(Range(std::max(band.start - 15, 0), std::min(band.end + 15, gray_dewarped2.rows)), Range(0, gray_dewarped2.cols));
-	Canny(gray_dewarped, canny, 130, 100);
+	Canny(gray_dewarped, canny, 200, 160);	//normal :200, 160 
 
-	//cv::imshow(std::to_string(idx) + "canny", canny);
-	imwrite("canny.jpg", canny);
+	cv::imshow(std::to_string(idx) + "canny", canny);
+	//imwrite("canny.jpg", canny);
+
+#define FONT_WIDTH 55
+#define FONT_HEIGHT 90
+#if 1
+	vector<vector<Point> > contours;
+	vector<Vec4i> hierarchy;
+	findContours(canny, contours, hierarchy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, Point(0,0));
+	
+	vector<vector<Point> > contours_poly(contours.size());
+	vector<Rect> boundRect((contours.size()));
+	vector<Rect> boundRect2;
+	for (int i = 0; i < contours.size(); i++) {
+		approxPolyDP(Mat(contours[i]), contours_poly[i], 1, true);
+		boundRect[i] = boundingRect(Mat(contours_poly[i]));
+	}
+
+
+	Mat contour_mat = Mat::zeros(canny.size(), CV_8UC3);
+
+	for (int i = 0; i < contours.size(); i++) {
+		float ratio = (float)boundRect[i].height / boundRect[i].width;
+		if (ratio <= 4.0 && ratio >= 1.0 && boundRect[i].area() > TO_PIXEL(FONT_WIDTH, factor) * TO_PIXEL(FONT_HEIGHT, factor) * 0.25  
+			&& boundRect[i].area() < TO_PIXEL(FONT_HEIGHT, factor) * TO_PIXEL(FONT_HEIGHT, factor)) {
+			//cout << "ratio:" << ratio << ", area:" << boundRect[i].area() << ", :" << boundRect[i].tl() <<"," << boundRect[i].br() <<endl;
+			drawContours(contour_mat, contours, i, Scalar(255, 0, 0), 1, 8);
+			//rectangle(contour_mat, boundRect[i].tl(), boundRect[i].br(), Scalar(0, 255, 0), 1, 8, 0);
+			boundRect2.push_back(boundRect[i]);
+		}
+		//rectangle(contour_mat, Point(100,100), Point(200,200), Scalar(0, 0, 255), 1, 8, 0);
+	}
+
+	vector<Rect> boundRect3; //포함되는 것은 제거
+	sort(boundRect2.begin(), boundRect2.end(), [](Rect a, Rect b) -> bool {
+			return a.area() > b.area();
+		});
+	for (auto box2 : boundRect2) {
+		bool bInclude = false;
+		for (auto box3 : boundRect3) {
+			if (box3.tl().x <= box2.tl().x && box3.tl().y <= box2.tl().y && 
+				box3.br().x >= box2.br().x && box3.br().y >= box2.br().y)
+				bInclude = true;
+		}
+		if (!bInclude) {
+			boundRect3.push_back(box2);
+			float ratio = (float)box2.height / box2.width;
+			//cout << "ratio:" << ratio << ", area:" << box2.area() << ", :" << box2.tl() << "," << box2.br() << endl;
+			rectangle(contour_mat, box2.tl(), box2.br(), Scalar(0, 255, 0), 1, 8, 0);
+		}
+	}
+#if 1
+	//group
+	vector<Group> groups;
+	FindGroup findgroup(boundRect3);
+	findgroup.process(groups, dewarped);
+
+#ifdef GROUP_DEBUG
+	int i = 0;
+	for (auto group : groups) {
+		cout << "[" << i++ << "] members: " << group.getMemberCount() << ", score:" << group.m_score << endl;
+		rectangle(contour_mat, group.getGroupRect().tl(), group.getGroupRect().br(), Scalar(0, 0, 255), 1, 8, 0);
+	}
+	cv::imshow(std::to_string(idx) + "contour", contour_mat);
+#endif
+
+
+	for (auto group : groups) {
+		//FloodFill
+		group.sort();
+		Rect leftRect = group.getLeftMember();
+		Rect rightRect = group.getRightMember();
+		//vector<PointEx> pointsInFrameEx, pointsInImageEx;
+		bool(*bg_func)(Vec3b);	//bg 판별식
+		vector<Point2i> pointsInFrame, pointsInImage;
+		FloodFill::FF_Point ffpointsInImage[4];
+		if (group.m_bgColor == Group::BG_WHITE) {                                             
+			bg_func = isBG_WHITE_Color;
+			findFloodFillTargetWhite(dewarped, )
+		}
+		else {
+			cout << "Green is skip!!!!!!" << endl;
+			break;
+			bg_func = isBG_GREEN_Color;
+			pointsPushRectGreen(dewarped, pointsInFrame, leftRect, is_GREEN_FontColor, isBG_GREEN_Color, position);
+			pointsPushRectGreen(dewarped, pointsInFrame, rightRect, is_GREEN_FontColor, isBG_GREEN_Color, position);
+		}
+#if 1
+		dewarp.calImagePoint(pointsInFrame, pointsInImage);
+
+		FloodFill floodfill(image, bg_func, true);
+		vector<Point2i> ffpoints;
+		for (FloodFill::FF_Point p : ffpointsInImage) {
+			floodfill.process(p, ffpoints);
+		}
+		
+
+#endif		
+		//for (auto center : pointsInFrame) {
+		//	circle(dewarped, center, 5, Scalar(0, 0, 255), 3);
+		//}
+		cv::imwrite("result.jpg", image);
+		cout << "Only best group check!!!!!!" << endl;
+		break;
+
+
+
+	}
+	cv::imshow("dewarped_" + std::to_string(idx), dewarped);
+
+#endif
+
+#endif
+
+
+
+#if 0
 
 	Mat grid(canny.rows, canny.cols, CV_8UC3);
-#define FONT_WIDTH 40
-#define FONT_HEIGHT 70
-#define EDGE_THRESHOLD_LESS_RATE 0.15
-#define EDGE_THRESHOLD_RATE 0.30
+
+//#define EDGE_THRESHOLD_LESS_RATE 0.15
+//#define EDGE_THRESHOLD_RATE 0.0001
 	grid = 0;
-	Size grid_cell((FONT_WIDTH + 3) * factor, FONT_HEIGHT * factor);
+	Size grid_cell(TO_PIXEL(FONT_WIDTH, factor) * 0.65, TO_PIXEL(FONT_HEIGHT, factor) * 0.65); //좀 작게 잡아서 겹치는 효과를 노린다.
 	int grid_rows = grid.rows / grid_cell.height;
 	int grid_cols = grid.cols / grid_cell.width;
-
+#define SHOW_GRID_DEBUG
 #ifdef SHOW_GRID_DEBUG
 	Mat grid_debug = canny.clone();
 	for (int i = 0; i < grid_rows; i++) {
@@ -460,8 +532,8 @@ bool test(Mat& image, const char* xml, int idx)
 	}
 	cv::imshow(std::to_string(idx) + "grid_debug" , grid_debug);
 #endif
-	int threshold_grid = grid_cell.height * grid_cell.width * EDGE_THRESHOLD_RATE;
-	int threshold_less_grid = grid_cell.height * grid_cell.width * EDGE_THRESHOLD_LESS_RATE;
+	//int threshold_grid = grid_cell.height * grid_cell.width * EDGE_THRESHOLD_RATE;
+	//int threshold_less_grid = grid_cell.height * grid_cell.width * EDGE_THRESHOLD_LESS_RATE;
 	vector<Point> vec_tr;
 	//vector<Point> vec_tlr;
 	//vector<Point> vec_tlr2;
@@ -473,38 +545,42 @@ bool test(Mat& image, const char* xml, int idx)
 		for (int i = 0; i < grid_cols; i++) {
 			Mat& cell = canny(Range(j * grid_cell.height, grid_cell.height *(j + 1)), Range(i * grid_cell.width, grid_cell.width *(i + 1)));
 			//int count_width;
-			int split_count = 0;
+			//int split_count = 0;
 			int count = 0;
 			for (int _j = 0; _j < grid_cell.width; _j++) {
 				int temp = 0;
 				for (int _i = 0; _i < grid_cell.height; _i++) {
-					if (cell.at<uchar>(_i, _j) > 100)
+					if (cell.at<uchar>(_i, _j) > 160)
 						temp++;
 				}
-				//count_width = temp;
-				if (temp < 3)
-					split_count++;
+				
 				count += temp;
 			}
-			//if (!split_count)
-			//	count = 0;
 			mat_count.at<uchar>(j, i) = count;
 			if (count > max_count)
 				max_count = count;
 		}
 	}
-	cout << "threshold_grid:" << threshold_grid << ", less:" << threshold_less_grid << endl;
+	//cout << "threshold_grid:" << threshold_grid << ", less:" << threshold_less_grid << endl;
+	cout << "count:" << endl;
+	for (int j = 0; j < grid_rows; j++) {
+		for (int i = 0; i < grid_cols; i++) {
+			cout << (int)mat_count.at<uchar>(j, i) << ", ";
+		}
+		cout << endl;
+	}
 	cout << "max_count:" << max_count << endl;
 	Mat grid_bin(grid_rows, grid_cols, CV_8UC1);
 	int *count_v = new int[grid_rows];
-	int _rate = 0;
+	int try_count = 0;
 	int plate_start_col, plate_start_row, plate_len = 0;
 	bool bFind = false;
+	int threshold_grid;
 	while (true) {
 		grid_bin = 0;
 		memset(count_v, 0x00, grid_rows * sizeof(int));
 		vec_tr.clear();
-		threshold_grid = max_count * (0.9 - 0.1*_rate);
+		threshold_grid = max_count * (0.9 - 0.1 * try_count);
 		for (int j = 0; j < grid_rows; j++) {
 			for (int i = 0; i < grid_cols; i++) {
 				if (mat_count.at<uchar>(j, i) > threshold_grid) {
@@ -517,8 +593,8 @@ bool test(Mat& image, const char* xml, int idx)
 		int state = 0; // 0:disconnect 1:exist 2:1 disconnected 
 		int connected_count = 0;
 		int s;
-		for (int j = grid_rows - 1; j >=0; j--) {
-			if (count_v[j] >= 4) {
+		for (int j = grid_rows - 1; j >=0; j--) {	//아래부터 탐색.
+			if (count_v[j] >= 4 / 0.65) {
 				for (int i = 0; i < grid_cols; i++) {
 					int val = grid_bin.at<uchar>(j, i);
 					if (state == 0) {
@@ -546,7 +622,7 @@ bool test(Mat& image, const char* xml, int idx)
 							connected_count = 0;
 							int len = i - s - 1;
 							if (len >= 4) {
-								cout << "find length:" << len << endl;
+								cout << "find length:" << len << endl << "rate:" << try_count << endl;
 								if (len > plate_len) {
 									plate_start_col = s;
 									plate_start_row = j;
@@ -564,7 +640,7 @@ bool test(Mat& image, const char* xml, int idx)
 		}
 		if (bFind)
 			break;
-		_rate++;
+		try_count++;
 	}
 	cout << "find start:row:" << plate_start_row << ",col:" << plate_start_col << ", plate_len:"<< plate_len << endl;
 #if 0
@@ -597,6 +673,8 @@ bool test(Mat& image, const char* xml, int idx)
 	//drawGrid(grid, mask, vec_tlr);
 	//drawGrid(grid, mask, vec_tlr2);
 	cv::imshow(std::to_string(idx) + "grid", grid);
+#endif
+#if 0
 	vector<detectedLine> result_lines;
 	if (!detect_line(canny, Rect(plate_start_col*grid_cell.width, plate_start_row*grid_cell.height, plate_len*grid_cell.width, grid_cell.height), grid_cell.height * 0.5, result_lines)) {
 		printf("No line is detected!\n");
@@ -632,7 +710,8 @@ bool test(Mat& image, const char* xml, int idx)
 	cv::resize(debug_outline, debug_outline2, cv::Size(dewarped.cols *3, dewarped.rows *3), 0, 0, CV_INTER_NN);
 	cv::imshow(std::to_string(idx) + "debug_outline2", debug_outline2);
 	imwrite("debug_outline.jpg", debug_outline);
-
+#endif
+	return true;
 }
 struct direction {
 	int count;
@@ -957,17 +1036,18 @@ bool detect_line(Mat& img, Rect rect, int delta, vector<detectedLine>& result_li
 	return bFind;
 }
 const char* points_xml[] = {
+	//"points_211_DL3.xml",
 	"points_174_UL1.xml",
-	"points_174_UR1.xml",
-	"points_174_D.xml",
-	"points_174_DL1.xml",
-	"points_174_DR1.xml"
+	//"points_174_UR1.xml",
+	//"points_174_D.xml",
+	//"points_174_DL1.xml",
+	//"points_174_DR1.xml"
 };
 
 int main()
 {
 	cv::Mat image; // create an empty image
-	image = cv::imread("capture_174.jpg");
+	image = cv::imread("capture_174_2.jpg");
 	if (image.empty()) { // error handling
 						 // no image has been created…
 						 // possibly display an error message
@@ -975,13 +1055,8 @@ int main()
 		cv::waitKey(0);
 	}
 
-	//getPoints("points_174_UL1.xml", points, board_size, plate_size);
-	//getPoints("points_174_UR1.xml", points, board_size, plate_size);
-	//getPoints("points_174_D.xml", points, board_size, plate_size);
-	//getPoints("points_174_DL1.xml", points, board_size, plate_size);
-	//getPoints("points_174_DR1.xml", points, board_size, plate_size);
 	for (int i = 0; i < sizeof(points_xml) / sizeof(char*); i++) {
-		test(image, points_xml[i], i);
+		findPlate(image, points_xml[i], i);
 	}
 
 #if 0

@@ -1,13 +1,16 @@
 <?xml version="1.0"?>
 <opencv_storage>
+<position>
+  "upleft"
+</position>
 <points>
-  1080. 743.
-  1256. 654.
-  1334. 760.
-  1160. 829.
+  942. 793.
+  1184. 639.
+  1343. 818.
+  1112. 904.
 </points>
 <board_size>
-  833 590    
+  1180 1040
 </board_size>
 <plate_size>
   310 100    
