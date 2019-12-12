@@ -17,7 +17,7 @@ void Group::sort()
 
 int Group::optimize() 
 {
-	std::cout << "optimize" << std::endl;
+	//std::cout << "optimize" << std::endl;
 	std::vector<std::pair<int, int> > seq_pairs;
 	for (int j = 0; j < m_members.size(); j++) {
 		for (int i = j + 1; i < m_members.size(); i++) {

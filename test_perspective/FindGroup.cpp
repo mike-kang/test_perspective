@@ -88,9 +88,9 @@ void FindGroup::process(vector<Group>& groups, Mat dewarped_img)
 		return a.rect.br().y > b.rect.br().y;
 	});
 	//cout << "*********************sorted" << endl;
-	for (auto elem : m_elements) {
-		cout << elem.rect << endl;
-	}
+	//for (auto elem : m_elements) {
+	//	cout << elem.rect << endl;
+	//}
 	int i = 0;
 	while (m_avail_count) {
 		Group group;
@@ -114,14 +114,14 @@ void FindGroup::process(vector<Group>& groups, Mat dewarped_img)
 		}
 	}
 
-	cout << "Groups count:" << groups.size() << endl;
+	//cout << "Groups count:" << groups.size() << endl;
 	i = 0;
 	vector<Group> vecGroup2;
 	vector<Group> vecGroup4;
 
 	for (auto& group : groups) {
 		int op = group.optimize();	// member 겹치는 것 제거
-		cout << "optimize count: " << op << endl;
+		//cout << "optimize count: " << op << endl;
 		group.setId(i++);
 		if (group.getMemberCount() == 4) {
 			group.sort();
@@ -144,7 +144,7 @@ void FindGroup::process(vector<Group>& groups, Mat dewarped_img)
 				int y1 = max(rect2.br().y, rect4.br().y);
 				int height = y1 - y0;
 				if ((height < max(rect2.height, rect4.height) + min(rect2.height, rect4.height)* (float)0.2)){
-					cout << rect4.tl().x - rect2.br().x << " " << group4.getMaxWidth() << endl;
+					//cout << rect4.tl().x - rect2.br().x << " " << group4.getMaxWidth() << endl;
 					if (rect4.tl().x - rect2.br().x <= 2.5 * group4.getMaxWidth()){
 						pairs.push_back(std::make_pair(group2.getId(), group4.getId()));
 					}
@@ -201,9 +201,11 @@ void FindGroup::process(vector<Group>& groups, Mat dewarped_img)
 			}
 			int avg_y = sum_y / (rects.size() - 2);
 			int avg_height = sum_height / (rects.size() - 2);
-			if (rects[0].tl().y < avg_y - avg_height * 0.7)
+			if (rects[0].tl().y < avg_y - avg_height * 0.2 && rects[0].height < avg_height *0.75)
 				rects.erase(rects.begin());
-			if (rects[rects.size() - 1].tl().y < avg_y - avg_height * 0.5)
+			if (rects[rects.size() - 1].tl().y < avg_y - avg_height * 0.2 && rects[rects.size() - 1].height < avg_height *0.75)
+				rects.erase(rects.begin() + rects.size() - 1);
+			if (rects[rects.size() - 1].tl().y > avg_y + avg_height * 0.2 && rects[rects.size() - 1].height < avg_height *0.75)
 				rects.erase(rects.begin() + rects.size() - 1);
 		}
 #if 0

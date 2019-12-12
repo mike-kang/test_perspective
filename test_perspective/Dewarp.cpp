@@ -5,26 +5,52 @@
 using namespace cv;
 using namespace std;
 
+//센서상의 점에서 왜곡을 제거한 p'를 구한다. 
+void Dewarp::cal_point_(Point2f& src, Point2f& dst)
+{
+	Point2f p_0, p_;
+	Point2f p0 = src - m_cameraParam.center;
+
+	double length = norm(p0);
+	double k = length / m_cameraParam.fl;
+	float theta_;	//입사각
+	findAngle(k, theta_);
+	float length_ = m_cameraParam.fl * tan(theta_);
+	p_0 = length_ / length * p0;
+	dst = p_0;
+}
+void Dewarp::cal_point_(Point2i& src, Point2f& dst)
+{
+	Point2f p_0, p_;
+	Point2f p0 = (Point2f)src - m_cameraParam.center;
+
+	double length = norm(p0);
+	double k = length / m_cameraParam.fl;
+	float theta_;	//입사각
+	findAngle(k, theta_);
+	float length_ = m_cameraParam.fl * tan(theta_);
+	p_0 = length_ / length * p0;
+	dst = p_0;
+}
 //센서상의 점들에서 왜곡을 제거한 p'를 구한다. 
 vector<Point2f>& Dewarp::cal_points_(vector<Point2f>& src, vector<Point2f>&dst)
 {
-	float k;
 	for (auto p : src) {
-		Point2f p_0, p_;
-		Point2f p0 = p - m_cameraParam.center;
-
-		double length = norm(p0);
-		double k = length / m_cameraParam.fl;
-		float theta_;	//입사각
-		findAngle(k, theta_);
-		float length_ = m_cameraParam.fl * tan(theta_);
-		p_0 = length_ / length * p0;
-		p_ = p_0;
+		Point2f p_;
+		cal_point_(p, p_);
 		dst.push_back(p_);
 	}
 	return dst;
 }
-
+vector<Point2f>& Dewarp::cal_points_(vector<Point2i>& src, vector<Point2f>&dst)
+{
+	for (auto p : src) {
+		Point2f p_;
+		cal_point_(p, p_);
+		dst.push_back(p_);
+	}
+	return dst;
+}
 Point2f& Dewarp::cal_point(Point2f& p_, Point2f& p)
 {
 	Point2f p0;
@@ -41,6 +67,7 @@ Point2f& Dewarp::cal_point(Point2f& p_, Point2f& p)
 
 	return p;
 }
+
 
 //왜곡없는 점들에서 왜곡이 포함된 점들을 구한다. p_ -> p
 vector<Point2f>& Dewarp::cal_points(vector<Point2f>& src, vector<Point2f>&dst)
@@ -82,6 +109,8 @@ void Dewarp::calHomography(vector<Point2f>& frame, vector<Point2f>& image)
 	vector<Point2f> points_;
 
 	m_homo = findHomography(frame, cal_points_(image, points_), NULL);
+	m_homo_inv = m_homo.inv(cv::DECOMP_LU);
+	//cout << m_homo_inv << endl;
 	/*
 	m_homo32.create(m_homo.rows, m_homo.cols, CV_32F);
 	for (int j = 0; j < m_homo.rows; j++) {
@@ -161,10 +190,10 @@ void Dewarp::calImagePoint(Point2i& pointInFrame, Point2i& pointInimage)
 {
 	int i = 0;
 
-	Mat m(Matx31f(pointInFrame.x, pointInFrame.y, 1.));
+	Mat m(Matx31d(pointInFrame.x, pointInFrame.y, 1.));
 
 	Mat result = m_homo * m;
-	cout << result << endl;
+	//cout << result << endl;
 
 	float k = result.at<double>(2);
 	Point2f pointInimage_(result.at<double>(0) / k, result.at<double>(1) / k);
@@ -173,3 +202,24 @@ void Dewarp::calImagePoint(Point2i& pointInFrame, Point2i& pointInimage)
 	pointInimage = temp;
 
 }
+
+void Dewarp::calDewarpPoint(Point2i& src, Point2i& dst)
+{
+	Point2f points_;
+	cal_point_(src, points_);
+	Mat m(Matx31d(points_.x, points_.y, 1.));
+	Mat result = m_homo_inv * m;
+	float k = result.at<double>(2);
+	dst.x = result.at<double>(0) / k;
+	dst.y = result.at<double>(1) / k;
+}
+
+void Dewarp::calDewarpPoints(vector<cv::Point2i>& src, vector<cv::Point2i>&dst)
+{
+	for (auto p : src) {
+		Point2i dewarp;
+		calDewarpPoint(p, dewarp);
+		dst.push_back(dewarp);
+	}
+}
+
